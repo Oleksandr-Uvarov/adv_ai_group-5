@@ -21,8 +21,11 @@ class Game:
 
         # Place player and exit randomly on floor tiles
         floor_cells = self._floor_cells()
-        self.player_pos = list(random.choice(floor_cells))
-        self.exit_pos   = list(random.choice(floor_cells))
+        positions = random.sample(floor_cells, 3)
+        self.player_pos = list(positions[0])
+        self.exit_pos   = list(positions[1])
+        self.enemy_pos  = list(positions[2])
+
 
         self.done = False
         self.steps = 0
@@ -36,34 +39,66 @@ class Game:
         if self.done:
             raise RuntimeError("Episode is over. Call reset().")
 
+        old_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
+                    abs(self.player_pos[1] - self.exit_pos[1])
+
         # Movement deltas
         deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
         dr, dc = deltas[action]
         new_r = self.player_pos[0] + dr
         new_c = self.player_pos[1] + dc
 
-        reward = -0.01  # small penalty per step (encourages efficiency)
-
         # Don't move into walls
         if self.grid[new_r, new_c] != WALL:
             self.player_pos = [new_r, new_c]
+
+        new_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
+                    abs(self.player_pos[1] - self.exit_pos[1])
+
+        reward = (old_dist - new_dist) * 0.1
 
         # Check win condition
         if self.player_pos == self.exit_pos:
             reward = 1.0
             self.done = True
 
+        self._move_enemy()
+
+        if self.enemy_pos == self.player_pos:
+            reward = -1.0
+            self.done = True
+
         self.steps += 1
         if self.steps >= 200:  # step limit
+            print("Limit of steps reached!")
             self.done = True
 
         return self._get_state(), reward, self.done
+
+    def _move_enemy(self):
+        """Moves enemy one step closer to the player"""
+        r, c = self.enemy_pos
+        pr, pc = self.player_pos
+
+        options = []
+        if pr < r: options.append((-1, 0))
+        if pr > r: options.append((1, 0))
+        if pc < c: options.append((0, -1))
+        if pc > c: options.append((0, 1))
+
+        for dr, dc in options:
+            new_r, new_c = r + dr, c + dc
+            if self.grid[new_r, new_c] != WALL:
+                self.enemy_pos = [new_r, new_c]
+                break
 
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
         state = self.grid.copy()
         state[self.player_pos[0], self.player_pos[1]] = 2  # player = 2
         state[self.exit_pos[0], self.exit_pos[1]]     = 3  # exit   = 3
+        state[self.enemy_pos[0], self.enemy_pos[1]]   = 4
+
         return state
 
     def _floor_cells(self):
