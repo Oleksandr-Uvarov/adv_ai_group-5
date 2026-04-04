@@ -1,0 +1,75 @@
+import numpy as np
+import random
+
+# Tile types
+FLOOR = 0
+WALL  = 1
+
+class Game:
+    def __init__(self, grid_size=10):
+        self.grid_size = grid_size
+        self.reset()
+
+    def reset(self):
+        """Reset to a fresh episode. Returns the initial state."""
+        # Simple map: walls on border, floor inside
+        self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
+        self.grid[0, :]  = WALL
+        self.grid[-1, :] = WALL
+        self.grid[:, 0]  = WALL
+        self.grid[:, -1] = WALL
+
+        # Place player and exit randomly on floor tiles
+        floor_cells = self._floor_cells()
+        self.player_pos = list(random.choice(floor_cells))
+        self.exit_pos   = list(random.choice(floor_cells))
+
+        self.done = False
+        self.steps = 0
+        return self._get_state()
+
+    def step(self, action):
+        """
+        Actions: 0=up, 1=down, 2=left, 3=right
+        Returns: state, reward, done
+        """
+        if self.done:
+            raise RuntimeError("Episode is over. Call reset().")
+
+        # Movement deltas
+        deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
+        dr, dc = deltas[action]
+        new_r = self.player_pos[0] + dr
+        new_c = self.player_pos[1] + dc
+
+        reward = -0.01  # small penalty per step (encourages efficiency)
+
+        # Don't move into walls
+        if self.grid[new_r, new_c] != WALL:
+            self.player_pos = [new_r, new_c]
+
+        # Check win condition
+        if self.player_pos == self.exit_pos:
+            reward = 1.0
+            self.done = True
+
+        self.steps += 1
+        if self.steps >= 200:  # step limit
+            self.done = True
+
+        return self._get_state(), reward, self.done
+
+    def _get_state(self):
+        """Returns a copy of the grid with player and exit marked."""
+        state = self.grid.copy()
+        state[self.player_pos[0], self.player_pos[1]] = 2  # player = 2
+        state[self.exit_pos[0], self.exit_pos[1]]     = 3  # exit   = 3
+        return state
+
+    def _floor_cells(self):
+        cells = []
+        for r in range(self.grid_size):
+            for c in range(self.grid_size):
+                if self.grid[r, c] == FLOOR:
+                    cells.append((r, c))
+        return cells
