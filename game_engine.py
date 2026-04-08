@@ -9,6 +9,7 @@ class Game:
     def __init__(self, grid_size=10):
         self.grid_size = grid_size
         self.reset()
+        self.done = False
 
     def reset(self):
         """Reset to a fresh episode. Returns the initial state."""
@@ -25,8 +26,6 @@ class Game:
         self.player_pos = list(positions[0])
         self.exit_pos   = list(positions[1])
         self.enemy_pos  = list(positions[2])
-
-
         self.done = False
         self.steps = 0
         return self._get_state()
@@ -38,6 +37,9 @@ class Game:
         """
         if self.done:
             raise RuntimeError("Episode is over. Call reset().")
+
+        terminated = False
+        truncated = False
 
         old_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
                     abs(self.player_pos[1] - self.exit_pos[1])
@@ -59,21 +61,26 @@ class Game:
 
         # Check win condition
         if self.player_pos == self.exit_pos:
-            reward = 1.0
+            speed_bonus = (200 - self.steps) / 200
+            reward = 1.0 + speed_bonus
+            terminated = True
             self.done = True
 
         self._move_enemy()
 
         if self.enemy_pos == self.player_pos:
             reward = -1.0
+            terminated = True
             self.done = True
 
         self.steps += 1
         if self.steps >= 200:  # step limit
-            print("Limit of steps reached!")
+            # print("Limit of steps reached!")
+            truncated = True
             self.done = True
 
-        return self._get_state(), reward, self.done
+
+        return self._get_state(), reward, terminated, truncated
 
     def _move_enemy(self):
         """Moves enemy one step closer to the player"""
@@ -97,7 +104,7 @@ class Game:
         state = self.grid.copy()
         state[self.player_pos[0], self.player_pos[1]] = 2  # player = 2
         state[self.exit_pos[0], self.exit_pos[1]]     = 3  # exit   = 3
-        state[self.enemy_pos[0], self.enemy_pos[1]]   = 4
+        # state[self.enemy_pos[0], self.enemy_pos[1]]   = 4
 
         return state
 

@@ -15,3 +15,5 @@ for step in range(200):
         print("Episode finished!")
         env.render()
         break
+
+    env.render()

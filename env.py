@@ -25,9 +25,9 @@ class GameEnv(gym.Env):
         return obs, {}  # Gymnasium expects (obs, info)
 
     def step(self, action):
-        obs, reward, done = self.game.step(int(action))
-        truncated = False  # you can use this for time limits later
-        return obs, reward, done, truncated, {}  # Gymnasium expects 5 values
+        obs, reward, terminated, truncated = self.game.step(int(action))
+
+        return obs, reward, terminated, truncated, {}  # Gymnasium expects 5 values
 
     def render(self):
         # Simple terminal render for now
