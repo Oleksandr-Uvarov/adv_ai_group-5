@@ -11,16 +11,11 @@ class GameEnv(gym.Env):
 
         # What the agent sees: a grid_size x grid_size grid, values 0-3
         self.observation_space = spaces.Box(
-            low=0, high=4,
-            shape=(grid_size, grid_size),
-            dtype=np.int32
+            low=0, high=255,
+            shape=(1, grid_size, grid_size),
+            dtype=np.uint8
         )
 
-        # self.observation_space = spaces.Box(
-        #     low=0, high=255,
-        #     shape=(1, grid_size, grid_size),
-        #     dtype=np.uint8
-        # )
         # What the agent can do: 4 directions
         self.action_space = spaces.Discrete(4)
 

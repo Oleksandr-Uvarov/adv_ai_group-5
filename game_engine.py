@@ -109,20 +109,14 @@ class Game:
 
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
-        state = self.grid.copy()
-        state[self.player_pos[0], self.player_pos[1]] = 2  # player = 2
-        state[self.exit_pos[0], self.exit_pos[1]]     = 3  # exit   = 3
-        # state[self.enemy_pos[0], self.enemy_pos[1]]   = 4
-
-        # state = self.grid.copy().astype(np.uint8)
-        # state[self.player_pos[0], self.player_pos[1]] = 64
-        # state[self.exit_pos[0], self.exit_pos[1]]     = 128
+        state = self.grid.copy().astype(np.uint8)
+        state[self.player_pos[0], self.player_pos[1]] = 64
+        state[self.exit_pos[0], self.exit_pos[1]]     = 128
         # state[self.enemy_pos[0], self.enemy_pos[1]]   = 192
 
-        # state[state == 1] = 255
+        state[state == 1] = 255
 
-        # return state[np.newaxis, :, :]
-        return state
+        return state[np.newaxis, :, :]
 
     def _floor_cells(self):
         cells = []

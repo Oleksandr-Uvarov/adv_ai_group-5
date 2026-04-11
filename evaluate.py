@@ -2,7 +2,7 @@ from stable_baselines3 import PPO
 from env import GameEnv
 
 env = GameEnv(grid_size=10)
-model = PPO.load("roguelike.ppo")
+model = PPO.load("roguelike_ppo")
 
 obs, info = env.reset()
 # env.render()
@@ -10,7 +10,7 @@ obs, info = env.reset()
 n_finished = 0
 n_truncated = 0
 
-for i in range(10):
+for i in range(1000):
     obs, info = env.reset()
 
     for step in range(200):
@@ -22,15 +22,17 @@ for i in range(10):
         if done:
             n_finished += 1
             print("Episode finished!")
-            env.render()
+            # env.render()
             break
 
-        env.render()
+        # env.render()
 
         if step == 199:
             n_truncated += 1
 
-    # print(i)
 
 
 print(n_finished, n_truncated)
+
+
+# exponentially reward correct moves in a row or wrong moves in a row
