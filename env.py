@@ -16,6 +16,11 @@ class GameEnv(gym.Env):
             dtype=np.int32
         )
 
+        # self.observation_space = spaces.Box(
+        #     low=0, high=255,
+        #     shape=(1, grid_size, grid_size),
+        #     dtype=np.uint8
+        # )
         # What the agent can do: 4 directions
         self.action_space = spaces.Discrete(4)
 
@@ -25,6 +30,7 @@ class GameEnv(gym.Env):
         return obs, {}  # Gymnasium expects (obs, info)
 
     def step(self, action):
+        # obs, reward, terminated, truncated = self.game.step(int(action.item()))
         obs, reward, terminated, truncated = self.game.step(int(action))
 
         return obs, reward, terminated, truncated, {}  # Gymnasium expects 5 values

@@ -25,7 +25,7 @@ class Game:
         positions = random.sample(floor_cells, 3)
         self.player_pos = list(positions[0])
         self.exit_pos   = list(positions[1])
-        self.enemy_pos  = list(positions[2])
+        # self.enemy_pos  = list(positions[2])
         self.done = False
         self.steps = 0
         return self._get_state()
@@ -41,8 +41,11 @@ class Game:
         terminated = False
         truncated = False
 
-        old_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
+        old_exit_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
                     abs(self.player_pos[1] - self.exit_pos[1])
+
+        # old_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
+        #             abs(self.player_pos[1] - self.enemy_pos[1])
 
         # Movement deltas
         deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
@@ -54,10 +57,10 @@ class Game:
         if self.grid[new_r, new_c] != WALL:
             self.player_pos = [new_r, new_c]
 
-        new_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
+        new_exit_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
                     abs(self.player_pos[1] - self.exit_pos[1])
 
-        reward = (old_dist - new_dist) * 0.1
+        reward = (old_exit_dist - new_exit_dist) * 0.1
 
         # Check win condition
         if self.player_pos == self.exit_pos:
@@ -66,12 +69,17 @@ class Game:
             terminated = True
             self.done = True
 
-        self._move_enemy()
+        # self._move_enemy()
 
-        if self.enemy_pos == self.player_pos:
-            reward = -1.0
-            terminated = True
-            self.done = True
+        # if self.enemy_pos == self.player_pos:
+        #     reward = -1.0
+        #     terminated = True
+        #     self.done = True
+
+        # new_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
+        #             abs(self.player_pos[1] - self.enemy_pos[1])
+        #
+        # reward += (old_enemy_dist - new_enemy_dist) * 0.05
 
         self.steps += 1
         if self.steps >= 200:  # step limit
@@ -106,6 +114,14 @@ class Game:
         state[self.exit_pos[0], self.exit_pos[1]]     = 3  # exit   = 3
         # state[self.enemy_pos[0], self.enemy_pos[1]]   = 4
 
+        # state = self.grid.copy().astype(np.uint8)
+        # state[self.player_pos[0], self.player_pos[1]] = 64
+        # state[self.exit_pos[0], self.exit_pos[1]]     = 128
+        # state[self.enemy_pos[0], self.enemy_pos[1]]   = 192
+
+        # state[state == 1] = 255
+
+        # return state[np.newaxis, :, :]
         return state
 
     def _floor_cells(self):
