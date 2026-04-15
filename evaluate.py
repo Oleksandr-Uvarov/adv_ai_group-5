@@ -1,8 +1,34 @@
 from stable_baselines3 import PPO
 from env import GameEnv
+from smallgridcnn import SmallGridCNN
+import faulthandler
+faulthandler.enable()
 
+# my_env = GameEnv(grid_size=10)
 env = GameEnv(grid_size=10)
-model = PPO.load("roguelike_ppo")
+
+from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
+
+# monitored_env = Monitor(my_env)
+# env = DummyVecEnv([lambda:monitored_env])
+
+# model = PPO.load("roguelike_ppo", env=env, custom_objects={"device": "cpu"})
+
+policy_kwargs = dict(
+    features_extractor_class=SmallGridCNN,
+    features_extractor_kwargs=dict(features_dim=64),
+)
+
+model = PPO.load(
+    "roguelike_ppo",
+    env=env,
+    custom_objects={
+        "device": "cpu",
+        "policy_kwargs": policy_kwargs,
+    }
+)
+
 
 obs, info = env.reset()
 # env.render()
@@ -17,11 +43,11 @@ for i in range(1000):
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = env.step(action)
 
-        print(f"Step {step+1} | Action: {action} | Reward: {reward:.2f} | Done: {done}")
+        # print(f"Step {step+1} | Action: {action} | Reward: {reward:.2f} | Done: {done}")
 
         if done:
             n_finished += 1
-            print("Episode finished!")
+            # print("Episode finished!")
             # env.render()
             break
 
@@ -30,9 +56,5 @@ for i in range(1000):
         if step == 199:
             n_truncated += 1
 
-
-
 print(n_finished, n_truncated)
 
-
-# exponentially reward correct moves in a row or wrong moves in a row

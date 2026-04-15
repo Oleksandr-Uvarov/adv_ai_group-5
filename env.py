@@ -32,8 +32,9 @@ class GameEnv(gym.Env):
 
     def render(self):
         # Simple terminal render for now
-        symbols = {0: ".", 1: "#", 2: "@", 3: "X", 4: "E"}
-        state = self.game._get_state()
+        symbols = {0: ".", 255: "#", 64: "@", 128: "X", 192: "E"}
+        state = self.game._get_state()[0]
         for row in state:
-            print(" ".join(symbols[cell] for cell in row))
+            # print(" ".join(symbols[cell] for cell in row))
+            print(" ".join(symbols.get(cell, "?") for cell in row))
         print()

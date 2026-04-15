@@ -14,13 +14,13 @@ for i in range(10000):
         action = env.action_space.sample()  # random agent
         obs, reward, done, truncated, info = env.step(action)
 
-        print(f"Step {step+1} | Action: {action} | Reward: {reward:.2f} | Done: {done}")
+        # print(f"Step {step+1} | Action: {action} | Reward: {reward:.2f} | Done: {done}")
 
         if done:
             n_finished += 1
             # print(n_finished)
             # print("Episode finished!")
-            # env.render()
+            env.render()
             break
 
         if step == 199:
