@@ -4,16 +4,7 @@ from smallgridcnn import SmallGridCNN
 import faulthandler
 faulthandler.enable()
 
-# my_env = GameEnv(grid_size=10)
 env = GameEnv(grid_size=10)
-
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.monitor import Monitor
-
-# monitored_env = Monitor(my_env)
-# env = DummyVecEnv([lambda:monitored_env])
-
-# model = PPO.load("roguelike_ppo", env=env, custom_objects={"device": "cpu"})
 
 policy_kwargs = dict(
     features_extractor_class=SmallGridCNN,

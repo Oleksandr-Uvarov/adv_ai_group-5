@@ -1,5 +1,6 @@
 import numpy as np
 import random
+from collections import deque
 
 # Tile types
 FLOOR = 0
@@ -14,21 +15,53 @@ class Game:
     def reset(self):
         """Reset to a fresh episode. Returns the initial state."""
         # Simple map: walls on border, floor inside
-        self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
-        self.grid[0, :]  = WALL
-        self.grid[-1, :] = WALL
-        self.grid[:, 0]  = WALL
-        self.grid[:, -1] = WALL
+        while True:
+            self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
+            self.grid[0, :]  = WALL
+            self.grid[-1, :] = WALL
+            self.grid[:, 0]  = WALL
+            self.grid[:, -1] = WALL
 
-        # Place player and exit randomly on floor tiles
-        floor_cells = self._floor_cells()
-        positions = random.sample(floor_cells, 3)
-        self.player_pos = list(positions[0])
-        self.exit_pos   = list(positions[1])
-        # self.enemy_pos  = list(positions[2])
+            for r in range(1, self.grid_size - 1):
+                for c in range(1, self.grid_size - 1):
+                    if random.random() < 0.2:
+                        self.grid[r, c] = WALL
+
+            # Place player and exit randomly on floor tiles
+            floor_cells = self._floor_cells()
+            if len(floor_cells) < 3:
+                continue
+
+
+            positions = random.sample(floor_cells, 3)
+            self.player_pos = list(positions[0])
+            self.exit_pos   = list(positions[1])
+            self.enemy_pos  = list(positions[2])
+
+            if self._is_reachable(self.player_pos, self.exit_pos):
+                break
+
         self.done = False
         self.steps = 0
         return self._get_state()
+
+    def _is_reachable(self, start, goal):
+        """BFS to check if goal is reachable from the start."""
+        start = tuple(start)
+        goal = tuple(goal)
+        visited = {start}
+        queue = deque([start])
+
+        while queue:
+            r, c = queue.popleft()
+            if (r,c) == goal:
+                return True
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) not in visited and self.grid[nr, nc] != WALL:
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
+        return False
 
     def step(self, action):
         """
@@ -44,8 +77,8 @@ class Game:
         old_exit_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
                     abs(self.player_pos[1] - self.exit_pos[1])
 
-        # old_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
-        #             abs(self.player_pos[1] - self.enemy_pos[1])
+        old_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
+                    abs(self.player_pos[1] - self.enemy_pos[1])
 
         # Movement deltas
         deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
@@ -69,17 +102,17 @@ class Game:
             terminated = True
             self.done = True
 
-        # self._move_enemy()
+        self._move_enemy()
 
-        # if self.enemy_pos == self.player_pos:
-        #     reward = -1.0
-        #     terminated = True
-        #     self.done = True
+        if self.enemy_pos == self.player_pos:
+            reward = -1.0
+            terminated = True
+            self.done = True
 
-        # new_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
-        #             abs(self.player_pos[1] - self.enemy_pos[1])
-        #
-        # reward += (old_enemy_dist - new_enemy_dist) * 0.05
+        new_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
+                    abs(self.player_pos[1] - self.enemy_pos[1])
+
+        reward += (old_enemy_dist - new_enemy_dist) * 0.05
 
         self.steps += 1
         if self.steps >= 200:  # step limit
@@ -109,14 +142,17 @@ class Game:
 
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
-        state = self.grid.copy().astype(np.uint8)
-        state[self.player_pos[0], self.player_pos[1]] = 64
-        state[self.exit_pos[0], self.exit_pos[1]]     = 128
-        # state[self.enemy_pos[0], self.enemy_pos[1]]   = 192
+        walls = (self.grid == WALL).astype(np.float32)
+        player = (np.zeros_like(self.grid, dtype=np.float32))
+        exit_ = (np.zeros_like(self.grid, dtype=np.float32))
+        enemy = (np.zeros_like(self.grid, dtype=np.float32))
 
-        state[state == 1] = 255
+        player[self.player_pos[0], self.player_pos[1]] = 1.0
+        exit_[self.player_pos[0], self.player_pos[1]] = 1.0
+        enemy[self.player_pos[0], self.player_pos[1]] = 1.0
 
-        return state[np.newaxis, :, :]
+        return np.stack([walls, player, exit_, enemy], axis=0)
+        # return np.stack([walls, player, exit_], axis=0)
 
     def _floor_cells(self):
         cells = []
