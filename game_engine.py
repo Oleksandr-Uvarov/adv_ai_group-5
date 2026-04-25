@@ -49,19 +49,41 @@ class Game:
         """BFS to check if goal is reachable from the start."""
         start = tuple(start)
         goal = tuple(goal)
+        if start == goal:
+            return True
         visited = {start}
         queue = deque([start])
 
         while queue:
             r, c = queue.popleft()
-            if (r,c) == goal:
-                return True
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nr, nc = r + dr, c + dc
+                if (r, c) == goal:
+                    return True
                 if (nr, nc) not in visited and self.grid[nr, nc] != WALL:
                     visited.add((nr, nc))
                     queue.append((nr, nc))
         return False
+
+
+    def _bfs_distance(self, start, goal):
+        """Utility method to get a BFS distance between a start and a goal
+            defined as an integer."""
+        if start == goal:
+            return 0
+
+        visited = {start: 0}
+        queue = deque([start])
+        while queue:
+            r, c = queue.popleft()
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) not in visited and self.grid[nr, nc] != WALL:
+                    visited[(nr, nc)] = visited[(r, c)] + 1
+                    if (nr, nc) == goal:
+                        return visited[(nr, nc)]
+                    queue.append((nr, nc))
+        return float("inf") # if exit is unreachable (blocked by walls, which shouldn't normally happen)
 
     def step(self, action):
         """
@@ -74,11 +96,8 @@ class Game:
         terminated = False
         truncated = False
 
-        old_exit_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
-                    abs(self.player_pos[1] - self.exit_pos[1])
-
-        old_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
-                    abs(self.player_pos[1] - self.enemy_pos[1])
+        old_exit_dist = self._bfs_distance(self.player_pos, self.exit_pos)
+        old_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos)
 
         # Movement deltas
         deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
@@ -90,8 +109,7 @@ class Game:
         if self.grid[new_r, new_c] != WALL:
             self.player_pos = [new_r, new_c]
 
-        new_exit_dist = abs(self.player_pos[0] - self.exit_pos[0]) + \
-                    abs(self.player_pos[1] - self.exit_pos[1])
+        new_exit_dist = self._bfs_distance(self.player_pos, self.exit_pos)
 
         reward = (old_exit_dist - new_exit_dist) * 0.1
 
@@ -102,15 +120,15 @@ class Game:
             terminated = True
             self.done = True
 
-        self._move_enemy()
+        if not terminated:
+            self._move_enemy()
 
         if self.enemy_pos == self.player_pos:
             reward = -1.0
             terminated = True
             self.done = True
 
-        new_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
-                    abs(self.player_pos[1] - self.enemy_pos[1])
+        new_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos)
 
         reward -= (old_enemy_dist - new_enemy_dist) * 0.05
 

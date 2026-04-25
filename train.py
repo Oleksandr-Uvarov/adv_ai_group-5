@@ -21,6 +21,7 @@ model = PPO("CnnPolicy",
         )
 
 # model.learn(total_timesteps=1_000_000)
-model.learn(total_timesteps=10_000_000)
-model.save("roguelike_ppo")
+# model.learn(total_timesteps=10_000_000)
+model.learn(total_timesteps=50_000)
+model.save("versions/roguelike_ppo_5")
 print("Training done.")
