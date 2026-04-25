@@ -1,8 +1,10 @@
 from stable_baselines3 import PPO
 from env import GameEnv
 from smallgridcnn import SmallGridCNN
+from stable_baselines3.common.env_util import make_vec_env
 
-env = GameEnv(grid_size=10)
+# env = GameEnv(grid_size=10)
+env = make_vec_env(lambda: GameEnv(grid_size=10), n_envs=8)
 
 policy_kwargs = dict(
     features_extractor_class=SmallGridCNN,
@@ -23,5 +25,5 @@ model = PPO("CnnPolicy",
 # model.learn(total_timesteps=1_000_000)
 # model.learn(total_timesteps=10_000_000)
 model.learn(total_timesteps=50_000)
-model.save("versions/roguelike_ppo_5")
+model.save("versions/roguelike_ppo_6")
 print("Training done.")

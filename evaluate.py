@@ -12,7 +12,7 @@ policy_kwargs = dict(
 )
 
 model = PPO.load(
-    "roguelike_ppo",
+    "versions/roguelike_ppo_6.zip",
     env=env,
     custom_objects={
         "device": "cpu",
@@ -29,7 +29,7 @@ n_won = 0
 n_lost = 0
 n_truncated = 0
 
-for i in range(1000):
+for i in range(10000):
     obs, info = env.reset()
 
     for step in range(200):

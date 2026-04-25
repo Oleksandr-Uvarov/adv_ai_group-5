@@ -12,7 +12,7 @@ class GameEnv(gym.Env):
         # What the agent sees: a grid_size x grid_size grid, values 0-3
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(4, grid_size, grid_size),  # channel per entity
+            shape=(5, grid_size, grid_size),  # channel per entity
             dtype=np.float32
         )
 

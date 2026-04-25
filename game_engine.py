@@ -38,7 +38,7 @@ class Game:
             self.exit_pos   = list(positions[1])
             self.enemy_pos  = list(positions[2])
 
-            if self._is_reachable(self.player_pos, self.exit_pos):
+            if self._is_reachable(self.player_pos, self.exit_pos) and self._is_reachable(self.player_pos, self.enemy_pos):
                 break
 
         self.done = False
@@ -69,6 +69,8 @@ class Game:
     def _bfs_distance(self, start, goal):
         """Utility method to get a BFS distance between a start and a goal
             defined as an integer."""
+        start = tuple(start)
+        goal = tuple(goal)
         if start == goal:
             return 0
 
@@ -115,7 +117,8 @@ class Game:
 
         # Check win condition
         if self.player_pos == self.exit_pos:
-            speed_bonus = (200 - self.steps) / 200
+            # speed_bonus = (200 - self.steps) / 200
+            speed_bonus = max(0.0, (50 - self.steps) / 50)
             reward = 1.0 + speed_bonus
             terminated = True
             self.done = True
@@ -185,8 +188,27 @@ class Game:
         exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
         enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
 
-        return np.stack([walls, player, exit_, enemy], axis=0)
-        # return np.stack([walls, player, exit_], axis=0)
+        goal = (self.exit_pos[0], self.exit_pos[1])
+        return np.stack([walls, player, exit_, enemy, self._distance_map(goal)], axis=0)
+
+
+    def _distance_map(self, goal):
+        dist = np.full((self.grid_size, self.grid_size), -1.0, dtype=np.float32)
+        goal = tuple(goal)
+        queue = deque([goal])
+        dist[goal[0], goal[1]] = 0.0
+
+        while queue:
+            r, c = queue.popleft()
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = r + dr, r + dc
+                if dist[nr, nc] < 0 and self.grid[nr, nc] != WALL:
+                    dist[nr, nc] = dist[r, c] + 1
+                    queue.append((nr, nc))
+        max_d = dist.max()
+        if max_d > 0:
+            dist = dist / max_d
+        return dist
 
     def _floor_cells(self):
         cells = []
