@@ -31,10 +31,11 @@ class GameEnv(gym.Env):
         return obs, reward, terminated, truncated, {}  # Gymnasium expects 5 values
 
     def render(self):
-        # Simple terminal render for now
-        symbols = {0: ".", 255: "#", 64: "@", 128: "X", 192: "E"}
-        state = self.game._get_state()[0]
-        for row in state:
-            # print(" ".join(symbols[cell] for cell in row))
-            print(" ".join(symbols.get(cell, "?") for cell in row))
+        g = self.game
+        grid_display = [['#' if g.grid[r, c] == 1 else '.' for c in range(g.grid_size)] for r in range(g.grid_size)]
+        grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
+        grid_display[g.enemy_pos[0]][g.enemy_pos[1]] = 'E'
+        grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
+        for row in grid_display:
+            print(' '.join(row))
         print()

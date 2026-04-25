@@ -20,6 +20,7 @@ model = PPO("CnnPolicy",
             tensorboard_log="./tb_logs/"
         )
 
-model.learn(total_timesteps=1_000_000)
+# model.learn(total_timesteps=1_000_000)
+model.learn(total_timesteps=10_000_000)
 model.save("roguelike_ppo")
 print("Training done.")

@@ -112,7 +112,7 @@ class Game:
         new_enemy_dist = abs(self.player_pos[0] - self.enemy_pos[0]) + \
                     abs(self.player_pos[1] - self.enemy_pos[1])
 
-        reward += (old_enemy_dist - new_enemy_dist) * 0.05
+        reward -= (old_enemy_dist - new_enemy_dist) * 0.05
 
         self.steps += 1
         if self.steps >= 200:  # step limit
@@ -124,21 +124,37 @@ class Game:
         return self._get_state(), reward, terminated, truncated
 
     def _move_enemy(self):
-        """Moves enemy one step closer to the player"""
-        r, c = self.enemy_pos
-        pr, pc = self.player_pos
+        """Moves enemy one step closer to the player using BFS."""
+        start = tuple(self.enemy_pos)
+        goal  = tuple(self.player_pos)
 
-        options = []
-        if pr < r: options.append((-1, 0))
-        if pr > r: options.append((1, 0))
-        if pc < c: options.append((0, -1))
-        if pc > c: options.append((0, 1))
+        if start == goal:
+            return
 
-        for dr, dc in options:
-            new_r, new_c = r + dr, c + dc
-            if self.grid[new_r, new_c] != WALL:
-                self.enemy_pos = [new_r, new_c]
+        # BFS: visited maps each cell to the cell it was reached from
+        visited = {start: None}
+        queue = deque([start])
+
+        while queue:
+            current = queue.popleft()
+            if current == goal:
                 break
+            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nr, nc = current[0] + dr, current[1] + dc
+                neighbor = (nr, nc)
+                if neighbor not in visited and self.grid[nr, nc] != WALL:
+                    visited[neighbor] = current
+                    queue.append(neighbor)
+
+        if goal not in visited:
+            return  # player unreachable, stay put
+
+        # Trace back from goal to find the first step
+        current = goal
+        while visited[current] != start:
+            current = visited[current]
+
+        self.enemy_pos = list(current)
 
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
@@ -148,8 +164,8 @@ class Game:
         enemy = (np.zeros_like(self.grid, dtype=np.float32))
 
         player[self.player_pos[0], self.player_pos[1]] = 1.0
-        exit_[self.player_pos[0], self.player_pos[1]] = 1.0
-        enemy[self.player_pos[0], self.player_pos[1]] = 1.0
+        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
+        enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
 
         return np.stack([walls, player, exit_, enemy], axis=0)
         # return np.stack([walls, player, exit_], axis=0)

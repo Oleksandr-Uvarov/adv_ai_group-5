@@ -6,10 +6,6 @@ class SmallGridCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 64):
         super().__init__(observation_space, features_dim)
         self.cnn = nn.Sequential(
-            # nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1),  # small kernel
-            # nn.ReLU(),
-            # nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
-            # nn.ReLU(),
             nn.Conv2d(4, 32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
