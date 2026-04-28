@@ -118,7 +118,7 @@ class Game:
         # Check win condition
         if self.player_pos == self.exit_pos:
             # speed_bonus = (200 - self.steps) / 200
-            speed_bonus = max(0.0, (50 - self.steps) / 50)
+            speed_bonus = max(0.0, (100 - self.steps) / 100)
             reward = 1.0 + speed_bonus
             terminated = True
             self.done = True
@@ -201,7 +201,7 @@ class Game:
         while queue:
             r, c = queue.popleft()
             for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nr, nc = r + dr, r + dc
+                nr, nc = r + dr, c + dc
                 if dist[nr, nc] < 0 and self.grid[nr, nc] != WALL:
                     dist[nr, nc] = dist[r, c] + 1
                     queue.append((nr, nc))

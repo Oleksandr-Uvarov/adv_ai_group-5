@@ -1,3 +1,4 @@
+import random
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -21,6 +22,8 @@ class GameEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        if seed is not None:
+            random.seed(seed)
         obs = self.game.reset()
         return obs, {}  # Gymnasium expects (obs, info)
 
