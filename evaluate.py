@@ -12,7 +12,8 @@ policy_kwargs = dict(
 )
 
 model = PPO.load(
-    "versions/roguelike_ppo_8.zip",
+    # "version_history/pre_freeze/zips/roguelike_ppo_12.zip",
+    "versions/roguelike_ppo_12.zip",
     env=env,
     custom_objects={
         "device": "cpu",
@@ -22,17 +23,17 @@ model = PPO.load(
 
 
 obs, info = env.reset()
-# env.render()
+# env.render()  
 
 # n_finished = 0
 n_won = 0
 n_lost = 0
 n_truncated = 0
 
-for i in range(10000):
+for i in range(1000):
     obs, info = env.reset()
 
-    for step in range(200):
+    for step in range(125):
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = env.step(action)
 
@@ -50,7 +51,7 @@ for i in range(10000):
 
         # env.render()
 
-        if step == 199:
+        if step == 124:
             n_truncated += 1
 
 # print(n_finished, n_truncated)

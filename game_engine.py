@@ -11,6 +11,7 @@ class Game:
         self.grid_size = grid_size
         self.reset()
         self.done = False
+        self.step_limit = 125
 
     def reset(self):
         """Reset to a fresh episode. Returns the initial state."""
@@ -117,8 +118,7 @@ class Game:
 
         # Check win condition
         if self.player_pos == self.exit_pos:
-            # speed_bonus = (200 - self.steps) / 200
-            speed_bonus = max(0.0, (100 - self.steps) / 100)
+            speed_bonus = max(0.0, (75 - self.steps) / 75)
             reward = 1.0 + speed_bonus
             terminated = True
             self.done = True
@@ -136,7 +136,7 @@ class Game:
         reward -= (old_enemy_dist - new_enemy_dist) * 0.05
 
         self.steps += 1
-        if self.steps >= 200:  # step limit
+        if self.steps >= self.step_limit:  # step limit
             # print("Limit of steps reached!")
             truncated = True
             self.done = True
