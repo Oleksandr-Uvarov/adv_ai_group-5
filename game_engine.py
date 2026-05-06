@@ -30,16 +30,20 @@ class Game:
 
             # Place player and exit randomly on floor tiles
             floor_cells = self._floor_cells()
-            if len(floor_cells) < 3:
+            if len(floor_cells) < 4:
                 continue
 
 
-            positions = random.sample(floor_cells, 3)
+            positions = random.sample(floor_cells, 4)
             self.player_pos = list(positions[0])
             self.exit_pos   = list(positions[1])
             self.enemy_pos  = list(positions[2])
+            self.freeze_pos = list(positions[3])
+            self.freeze_ticks = 0
 
-            if self._is_reachable(self.player_pos, self.exit_pos) and self._is_reachable(self.player_pos, self.enemy_pos):
+            if (self._is_reachable(self.player_pos, self.exit_pos)
+                    and self._is_reachable(self.player_pos, self.enemy_pos)
+                    and self._is_reachable(self.player_pos, self.freeze_pos)):
                 break
 
         self.done = False
@@ -123,8 +127,11 @@ class Game:
             terminated = True
             self.done = True
 
+        if self.player_pos == self.freeze_pos:
+            self._pickup_freeze_powerup()
+
         if not terminated:
-            self._move_enemy()
+            self._next_enemy_action()
 
         if self.enemy_pos == self.player_pos:
             reward = -1.0
@@ -144,7 +151,7 @@ class Game:
 
         return self._get_state(), reward, terminated, truncated
 
-    def _move_enemy(self):
+    def _move_melee_enemy(self):
         """Moves enemy one step closer to the player using BFS."""
         start = tuple(self.enemy_pos)
         goal  = tuple(self.player_pos)
@@ -177,19 +184,16 @@ class Game:
 
         self.enemy_pos = list(current)
 
-    def _get_state(self):
-        """Returns a copy of the grid with player and exit marked."""
-        walls = (self.grid == WALL).astype(np.float32)
-        player = (np.zeros_like(self.grid, dtype=np.float32))
-        exit_ = (np.zeros_like(self.grid, dtype=np.float32))
-        enemy = (np.zeros_like(self.grid, dtype=np.float32))
+    def _next_enemy_action(self):
+        if self.freeze_ticks > 0:
+            self.freeze_ticks -= 1
+            return
+        self._move_melee_enemy()
 
-        player[self.player_pos[0], self.player_pos[1]] = 1.0
-        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
-        enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
 
-        goal = (self.exit_pos[0], self.exit_pos[1])
-        return np.stack([walls, player, exit_, enemy, self._distance_map(goal)], axis=0)
+    def _pickup_freeze_powerup(self):
+        self.freeze_ticks = 3
+        self.freeze_pos = None
 
 
     def _distance_map(self, goal):
@@ -209,6 +213,25 @@ class Game:
         if max_d > 0:
             dist = dist / max_d
         return dist
+
+    def _get_state(self):
+        """Returns a copy of the grid with player and exit marked."""
+        walls = (self.grid == WALL).astype(np.float32)
+        player = (np.zeros_like(self.grid, dtype=np.float32))
+        exit_ = (np.zeros_like(self.grid, dtype=np.float32))
+        enemy = (np.zeros_like(self.grid, dtype=np.float32))
+        freeze = (np.zeros_like(self.grid, dtype=np.float32))
+        freeze_status = (np.full((self.grid_size, self.grid_size), self.freeze_ticks / 3.0, dtype=np.float32))
+
+        player[self.player_pos[0], self.player_pos[1]] = 1.0
+        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
+        enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
+        if self.freeze_pos is not None:
+            freeze[self.freeze_pos[0], self.freeze_pos[1]] = 1.0
+
+        goal = (self.exit_pos[0], self.exit_pos[1])
+        return np.stack([walls, player, exit_, enemy, freeze, freeze_status, self._distance_map(goal)], axis=0)
+
 
     def _floor_cells(self):
         cells = []

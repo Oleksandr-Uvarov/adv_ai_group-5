@@ -13,7 +13,7 @@ class GameEnv(gym.Env):
         # What the agent sees: a grid_size x grid_size grid, values 0-3
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(5, grid_size, grid_size),  # channel per entity
+            shape=(7, grid_size, grid_size),  # channel per entity
             dtype=np.float32
         )
 
@@ -39,6 +39,8 @@ class GameEnv(gym.Env):
         grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
         grid_display[g.enemy_pos[0]][g.enemy_pos[1]] = 'E'
         grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
+        if g.freeze_pos is not None:
+            grid_display[g.freeze_pos[0]][g.freeze_pos[1]] = 'F'
         for row in grid_display:
             print(' '.join(row))
         print()
