@@ -239,6 +239,8 @@ class Game:
 
 
     def _shoot(self, action):
+        if self.enemy_pos is None:
+            return 0
         row_player_pos, col_player_pos = self.player_pos[0], self.player_pos[1]
         row_enemy_pos, col_enemy_pos = self.enemy_pos[0], self.enemy_pos[1]
 
@@ -255,13 +257,13 @@ class Game:
         or (action == 5 and col_enemy_pos > col_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "right"))):
             if abs(col_player_pos - col_enemy_pos) <= 3:
                 self.enemy_pos = None
-                return 0.2
+                return 0.3
 
         if ((action == 6 and row_enemy_pos < row_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "up"))
         or (action == 7 and row_enemy_pos > row_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "down"))):
             if abs(row_enemy_pos - row_player_pos) <= 3:
                 self.enemy_pos = None
-                return 0.2
+                return 0.3
 
         return 0
 

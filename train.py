@@ -25,8 +25,8 @@ model = PPO("CnnPolicy",
 
 # model.learn(total_timesteps=1_000_000)
 # model.learn(total_timesteps=9_000_000)
-# model.learn(total_timesteps=26_000_000)
-# model.save("versions/freeze_ppo_4")
+model.learn(total_timesteps=33_000_000)
+model.save("versions/shoot_ppo_1")
 print("Training done.")
 
 env.close()
