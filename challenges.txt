@@ -6,4 +6,8 @@ the agent not picking up a freeze because there was no reward (thought that the 
 if you pick up the freeze was enough)
 
 
-move-or-shoot versus two things at once: the former is easier
+move-or-shoot versus two things at once: the former is easier (because of the number of possibilities)
+
+
+balancing between picking up the key after eliminating the guard or tanking it to "speedrun" the game to get a better
+reward

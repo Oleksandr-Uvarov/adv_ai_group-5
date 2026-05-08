@@ -46,6 +46,8 @@ class GameEnv(gym.Env):
         grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
         if g.freeze_pos is not None:
             grid_display[g.freeze_pos[0]][g.freeze_pos[1]] = 'F'
+        if g.key_pos is not None:
+            grid_display[g.key_pos[0]][g.key_pos[1]] = 'K'
         for row in grid_display:
             print(' '.join(row))
         print()
