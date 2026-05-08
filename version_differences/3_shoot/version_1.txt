@@ -1,0 +1,4 @@
+reward for freeze: 0.15
+making sure the distance both to the enemy and exit is at least 4 tiles
+enemy moving 2 tiles per tick
+adding shooting (hitscan)

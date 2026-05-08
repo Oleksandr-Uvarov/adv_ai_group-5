@@ -1,0 +1,9 @@
+positions where you can't do anything because the enemy's always going to chase you using BFS
+    (stuck in a corner and infinite zigzagging)
+
+
+the agent not picking up a freeze because there was no reward (thought that the agent "seeing" that the enemy is frozen
+if you pick up the freeze was enough)
+
+
+move-or-shoot versus two things at once: the former is easier

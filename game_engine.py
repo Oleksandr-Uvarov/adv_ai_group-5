@@ -11,7 +11,7 @@ class Game:
         self.grid_size = grid_size
         self.reset()
         self.done = False
-        self.step_limit = 125
+        self.step_limit = 200
 
     def reset(self):
         """Reset to a fresh episode. Returns the initial state."""
@@ -46,7 +46,9 @@ class Game:
 
             if (self._is_reachable(self.player_pos, self.exit_pos)
                     and self._is_reachable(self.player_pos, self.enemy_pos)
-                    and self._is_reachable(self.player_pos, self.freeze_pos)):
+                    and self._is_reachable(self.player_pos, self.freeze_pos)
+                    and self._bfs_distance(self.player_pos, self.enemy_pos) >= 4
+                    and self._bfs_distance(self.player_pos, self.exit_pos) >= 4):
                 break
 
         self.done = False
@@ -73,6 +75,28 @@ class Game:
                     queue.append((nr, nc))
         return False
 
+    def _is_reachable_unidirectional(self, start, goal, direction):
+        start = tuple(start)
+        goal = tuple(goal)
+
+        direction_values = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0)}
+        dr, dc = direction_values[direction]
+        if start == goal:
+            return True
+
+        visited = {start}
+        queue = deque([start])
+
+        while queue:
+            r, c = queue.popleft()
+            nr, nc = r + dr, c + dc
+            if (r, c) == goal:
+                return True
+            if (nr, nc) not in visited and self.grid[nr, nc] != WALL:
+                visited.add((nr, nc))
+                queue.append((nr, nc))
+        return False
+
 
     def _bfs_distance(self, start, goal):
         """Utility method to get a BFS distance between a start and a goal
@@ -95,22 +119,8 @@ class Game:
                     queue.append((nr, nc))
         return float("inf") # if exit is unreachable (blocked by walls, which shouldn't normally happen)
 
-    def step(self, action):
-        """
-        Actions: 0=up, 1=down, 2=left, 3=right
-        Returns: state, reward, terminated, truncated
-        """
-        if self.done:
-            raise RuntimeError("Episode is over. Call reset().")
-
-        # defeated by an enemy or reached the exit
-        terminated = False
-        # step limit reached
-        truncated = False
-
+    def _move_agent(self, action, terminated):
         old_exit_dist = self._bfs_distance(self.player_pos, self.exit_pos)
-        old_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos)
-
         # Movement deltas
         deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
         dr, dc = deltas[action]
@@ -129,27 +139,45 @@ class Game:
 
         # Check win condition
         if self.player_pos == self.exit_pos:
-            speed_bonus = max(0.0, (75 - self.steps) / 75)
+            speed_bonus = max(0.0, (50 - self.steps) / 50)
             reward = 1.0 + speed_bonus
             terminated = True
             self.done = True
 
         if self.player_pos == self.freeze_pos:
+            reward += 0.15
             self._pickup_freeze_powerup()
 
+        return reward, terminated
+
+
+
+    def step(self, action):
+        """
+        Actions: 0=up, 1=down, 2=left, 3=right, 4=shoot left, 5=shoot right, 6=shoot up, shoot down
+        Returns: state, reward, done
+        """
+        if self.done:
+            raise RuntimeError("Episode is over. Call reset().")
+
+        terminated = False
+        truncated = False
         # checking for terminated status because if player has reached the exit
         # then the enemy's last step isn't relevant
         if not terminated:
             self._next_enemy_action()
 
-        if self.enemy_pos == self.player_pos:
-            reward = -1.0
-            terminated = True
-            self.done = True
+        old_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos) if self.enemy_pos is not None else float("inf")
 
-        new_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos)
+        if action < 4:
+            reward, terminated = self._move_agent(action, terminated)
+        else:
+            reward = self._shoot(action)
 
-        reward -= (old_enemy_dist - new_enemy_dist) * 0.05
+        if not terminated and self.enemy_pos is not None:
+            terminated, reward = self._next_enemy_action(terminated, reward, old_enemy_dist)
+
+
 
         self.steps += 1
         if self.steps >= self.step_limit and not terminated:  # step limit
@@ -189,16 +217,62 @@ class Game:
 
         self.enemy_pos = list(current)
 
-    def _next_enemy_action(self):
+    def _next_enemy_action(self, terminated, reward, old_enemy_dist):
         if self.freeze_ticks > 0:
             self.freeze_ticks -= 1
-            return
+            return terminated, reward
+
         self._move_melee_enemy()
+        self._move_melee_enemy()
+
+        if self.enemy_pos == self.player_pos:
+            reward = -1.0
+            terminated = True
+            self.done = True
+            return terminated, reward
+
+
+        new_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos)
+
+        reward -= (old_enemy_dist - new_enemy_dist) * 0.05
+
+        return terminated, reward
 
 
     def _pickup_freeze_powerup(self):
         self.freeze_ticks = 3
         self.freeze_pos = None
+
+
+    def _shoot(self, action):
+        if self.enemy_pos is None:
+            return 0
+        row_player_pos, col_player_pos = self.player_pos[0], self.player_pos[1]
+        row_enemy_pos, col_enemy_pos = self.enemy_pos[0], self.enemy_pos[1]
+
+
+        if action == 4 or action == 5:
+            if row_player_pos != row_enemy_pos:
+                return 0
+
+        if action == 6 or action == 7:
+            if col_player_pos != col_enemy_pos:
+                return 0
+
+        if ((action == 4 and col_enemy_pos < col_enemy_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "left"))
+        or (action == 5 and col_enemy_pos > col_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "right"))):
+            if abs(col_player_pos - col_enemy_pos) <= 3:
+                self.enemy_pos = None
+                return 0.3
+
+        if ((action == 6 and row_enemy_pos < row_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "up"))
+        or (action == 7 and row_enemy_pos > row_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "down"))):
+            if abs(row_enemy_pos - row_player_pos) <= 3:
+                self.enemy_pos = None
+                return 0.3
+
+        return 0
+
 
 
     def _distance_map(self, goal):
@@ -237,7 +311,8 @@ class Game:
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
         exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
-        enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
+        if self.enemy_pos is not None:
+            enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
         if self.freeze_pos is not None:
             freeze[self.freeze_pos[0], self.freeze_pos[1]] = 1.0
 

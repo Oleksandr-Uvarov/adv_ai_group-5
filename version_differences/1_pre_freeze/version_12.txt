@@ -1,0 +1,8 @@
+what changed from version 11:
+    grid_size 20 -> 10
+    number of steps: 10 mil -> 3 mil
+    n_steps: 4096 -> 2048
+    step limit: 500 -> 125
+    speed bonus: speed_bonus = max(0.0, (100 - self.steps) / 100) -> speed_bonus = max(0.0, (75 - self.steps) / 75)
+
+

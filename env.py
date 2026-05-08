@@ -18,8 +18,8 @@ class GameEnv(gym.Env):
             dtype=np.float32
         )
 
-        # What the agent can do: 4 directions
-        self.action_space = spaces.Discrete(4)
+        # What the agent can do: 4 directions to go to and 4 directions to shoot to
+        self.action_space = spaces.Discrete(8)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -41,7 +41,8 @@ class GameEnv(gym.Env):
         g = self.game
         grid_display = [['#' if g.grid[r, c] == 1 else '.' for c in range(g.grid_size)] for r in range(g.grid_size)]
         grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
-        grid_display[g.enemy_pos[0]][g.enemy_pos[1]] = 'E'
+        if g.enemy_pos is not None:
+            grid_display[g.enemy_pos[0]][g.enemy_pos[1]] = 'E'
         grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
         if g.freeze_pos is not None:
             grid_display[g.freeze_pos[0]][g.freeze_pos[1]] = 'F'
