@@ -10,7 +10,8 @@ class GameEnv(gym.Env):
         self.game = Game(grid_size)
         self.grid_size = grid_size
 
-        # What the agent sees: a grid_size x grid_size grid, values 0-3
+        # What the agent sees: a grid_size x grid_size grid for every
+        # channel (exit, enemy, powerup, etc.)
         self.observation_space = spaces.Box(
             low=0, high=1,
             shape=(7, grid_size, grid_size),  # channel per entity
@@ -28,12 +29,15 @@ class GameEnv(gym.Env):
         return obs, {}  # Gymnasium expects (obs, info)
 
     def step(self, action):
-        # obs, reward, terminated, truncated = self.game.step(int(action.item()))
         obs, reward, terminated, truncated = self.game.step(int(action))
 
         return obs, reward, terminated, truncated, {}  # Gymnasium expects 5 values
 
     def render(self):
+        """
+        Printing the current state of the game into the terminal.
+        :return:
+        """
         g = self.game
         grid_display = [['#' if g.grid[r, c] == 1 else '.' for c in range(g.grid_size)] for r in range(g.grid_size)]
         grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
