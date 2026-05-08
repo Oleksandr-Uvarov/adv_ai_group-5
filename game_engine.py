@@ -17,22 +17,25 @@ class Game:
         """Reset to a fresh episode. Returns the initial state."""
         # Simple map: walls on border, floor inside
         while True:
+            # Initializing an empty grid
             self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
+            # Setting walls on all sides
             self.grid[0, :]  = WALL
             self.grid[-1, :] = WALL
             self.grid[:, 0]  = WALL
             self.grid[:, -1] = WALL
 
+            # for every row and column, add a wall with a 20% chance
+            # to add some random patterns into the game
             for r in range(1, self.grid_size - 1):
                 for c in range(1, self.grid_size - 1):
                     if random.random() < 0.2:
                         self.grid[r, c] = WALL
 
-            # Place player and exit randomly on floor tiles
+            # place remaining stuff on remaining empty (floor) cells
             floor_cells = self._floor_cells()
             if len(floor_cells) < 4:
                 continue
-
 
             positions = random.sample(floor_cells, 4)
             self.player_pos = list(positions[0])
@@ -130,6 +133,8 @@ class Game:
 
         new_exit_dist = self._bfs_distance(self.player_pos, self.exit_pos)
 
+        # if old exit distance is greater than new exist distance,
+        # then reward is positive.
         reward = (old_exit_dist - new_exit_dist) * 0.1
 
         # Check win condition
@@ -157,6 +162,10 @@ class Game:
 
         terminated = False
         truncated = False
+        # checking for terminated status because if player has reached the exit
+        # then the enemy's last step isn't relevant
+        if not terminated:
+            self._next_enemy_action()
 
         old_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos) if self.enemy_pos is not None else float("inf")
 
@@ -179,7 +188,7 @@ class Game:
         return self._get_state(), reward, terminated, truncated
 
     def _move_melee_enemy(self):
-        """Moves enemy one step closer to the player using BFS."""
+        """Moves melee enemy one step closer to the player using BFS."""
         start = tuple(self.enemy_pos)
         goal  = tuple(self.player_pos)
 
@@ -200,9 +209,6 @@ class Game:
                 if neighbor not in visited and self.grid[nr, nc] != WALL:
                     visited[neighbor] = current
                     queue.append(neighbor)
-
-        if goal not in visited:
-            return  # player unreachable, stay put
 
         # Trace back from goal to find the first step
         current = goal
@@ -270,6 +276,9 @@ class Game:
 
 
     def _distance_map(self, goal):
+        """Distance map that is used as a separate channel
+        in _get_state() to give the agent an overview of
+        how close the goal is based on a given tile."""
         dist = np.full((self.grid_size, self.grid_size), -1.0, dtype=np.float32)
         goal = tuple(goal)
         queue = deque([goal])
@@ -289,13 +298,17 @@ class Game:
 
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
+        # creating grids filled with zeros
         walls = (self.grid == WALL).astype(np.float32)
         player = (np.zeros_like(self.grid, dtype=np.float32))
         exit_ = (np.zeros_like(self.grid, dtype=np.float32))
         enemy = (np.zeros_like(self.grid, dtype=np.float32))
         freeze = (np.zeros_like(self.grid, dtype=np.float32))
+        # separate channel where every tile has the same value -
+        # how many ticks of freeze status are left (normalized)
         freeze_status = (np.full((self.grid_size, self.grid_size), self.freeze_ticks / 3.0, dtype=np.float32))
 
+        # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
         exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
         if self.enemy_pos is not None:

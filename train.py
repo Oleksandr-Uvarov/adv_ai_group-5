@@ -3,7 +3,8 @@ from env import GameEnv
 from smallgridcnn import SmallGridCNN
 from stable_baselines3.common.env_util import make_vec_env
 
-# env = GameEnv(grid_size=10)
+# n_envs - number of environments run in parallel.
+# 8 should multiply the FPS by 8, but in reality it's slower than that.
 env = make_vec_env(lambda: GameEnv(grid_size=10), n_envs=8, seed=42)
 
 policy_kwargs = dict(

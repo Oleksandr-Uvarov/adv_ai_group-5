@@ -23,7 +23,6 @@ model = PPO.load(
 
 
 obs, info = env.reset()
-# env.render()  
 
 n_won = 0
 n_lost = 0
@@ -38,7 +37,6 @@ for i in range(10000):
 
         # env.render()
         if done:
-            # n_finished += 1
             if env.game.player_pos == env.game.enemy_pos:
                 n_lost += 1
             else:
