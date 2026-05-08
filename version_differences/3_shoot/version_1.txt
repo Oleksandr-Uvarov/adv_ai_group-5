@@ -2,3 +2,9 @@ reward for freeze: 0.15
 making sure the distance both to the enemy and exit is at least 4 tiles
 enemy moving 2 tiles per tick
 adding shooting (hitscan)
+
+Evaluation for 10k episodes:
+
+        n_won: 9257
+        n_lost: 724
+        n_truncated: 19

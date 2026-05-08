@@ -11,3 +11,7 @@ move-or-shoot versus two things at once: the former is easier (because of the nu
 
 balancing between picking up the key after eliminating the guard or tanking it to "speedrun" the game to get a better
 reward
+
+
+making sure it's possible to eliminate the guard -> what if RNG places walls in such a way that the guard is defended
+by walls from all sides, and you can only pick up a key from one side without being able to shoot the guard first?

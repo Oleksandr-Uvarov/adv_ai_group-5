@@ -11,7 +11,7 @@ class Game:
         self.grid_size = grid_size
         self.reset()
         self.done = False
-        self.step_limit = 200
+        self.step_limit = 100
 
     def reset(self):
         """Reset to a fresh episode. Returns the initial state."""
@@ -43,6 +43,7 @@ class Game:
             self.enemy_pos  = list(positions[2])
             self.freeze_pos = list(positions[3])
             self.key_pos = list(positions[4])
+            self.guard_pos = self._initialize_guard_pos()
             self.freeze_ticks = 0
             self.has_key = False
 
@@ -50,9 +51,11 @@ class Game:
                     and self._is_reachable(self.player_pos, self.enemy_pos)
                     and self._is_reachable(self.player_pos, self.freeze_pos)
                     and self._is_reachable(self.player_pos, self.key_pos)
+                    and self._is_guard_reachable()
                     and self._bfs_distance(self.player_pos, self.enemy_pos) >= 4
                     and self._bfs_distance(self.player_pos, self.key_pos) >= 2
-                    and self._bfs_distance(self.player_pos, self.exit_pos) >= 4):
+                    and self._bfs_distance(self.player_pos, self.exit_pos) >= 4
+                    and self.guard_pos is not None):
                 break
 
         self.done = False
@@ -79,7 +82,7 @@ class Game:
                     queue.append((nr, nc))
         return False
 
-    def _is_reachable_unidirectional(self, start, goal, direction):
+    def _is_reachable_unidirectional(self, start, goal, direction, check_for_key=False):
         start = tuple(start)
         goal = tuple(goal)
 
@@ -96,11 +99,19 @@ class Game:
             nr, nc = r + dr, c + dc
             if (r, c) == goal:
                 return True
-            if (nr, nc) not in visited and self.grid[nr, nc] != WALL:
+            if ((nr, nc) not in visited and self.grid[nr, nc] != WALL
+                    and (check_for_key is False or (check_for_key and [nr, nc] != self.key_pos))):
                 visited.add((nr, nc))
                 queue.append((nr, nc))
         return False
 
+    def _is_guard_reachable(self):
+        return (
+            self._is_reachable_unidirectional(self.player_pos, self.guard_pos, "left", True) or
+            self._is_reachable_unidirectional(self.player_pos, self.guard_pos, "right", True) or
+            self._is_reachable_unidirectional(self.player_pos, self.guard_pos, "up", True) or
+            self._is_reachable_unidirectional(self.player_pos, self.guard_pos, "down", True)
+        )
 
     def _bfs_distance(self, start, goal):
         """Utility method to get a BFS distance between a start and a goal
@@ -122,6 +133,15 @@ class Game:
                         return visited[(nr, nc)]
                     queue.append((nr, nc))
         return float("inf") # if exit is unreachable (blocked by walls, which shouldn't normally happen)
+
+    def _initialize_guard_pos(self):
+        r, c = self.key_pos
+        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nr, nc = r + dr, c + dc
+            if self.grid[nr, nc] == FLOOR:
+                return [nr, nc]
+        return None
+
 
     def _move_agent(self, action, terminated):
         if self.has_key:
@@ -147,18 +167,23 @@ class Game:
         reward = (old_goal_dist - new_goal_dist) * 0.1
 
         if self.key_pos and self.player_pos == self.key_pos:
-            reward += 0.3
-            self.key_pos = None
-            self.has_key = True
+            if self.guard_pos is not None:
+                reward = -1.0
+                terminated = True
+                self.done = True
+            else:
+                reward += 0.3
+                self.key_pos = None
+                self.has_key = True
 
         # Check win condition
-        if self.player_pos == self.exit_pos and self.has_key:
+        elif self.player_pos == self.exit_pos and self.has_key:
             speed_bonus = max(0.0, (50 - self.steps) / 50)
             reward = 1.0 + speed_bonus
             terminated = True
             self.done = True
 
-        if self.player_pos == self.freeze_pos:
+        elif self.player_pos == self.freeze_pos:
             reward += 0.15
             self._pickup_freeze_powerup()
         return reward, terminated
@@ -254,32 +279,40 @@ class Game:
         self.freeze_pos = None
 
 
+    def _get_closest_unidirectional_enemy(self, enemies, direction):
+        shortest_distance = 100000
+        closest_enemy = None
+
+        for enemy in enemies:
+            if self._is_reachable_unidirectional(self.player_pos, enemy, direction):
+                distance = self._bfs_distance(self.player_pos, enemy)
+                if distance < shortest_distance:
+                    shortest_distance = distance
+                    closest_enemy = enemy
+
+        return closest_enemy
+
     def _shoot(self, action):
-        if self.enemy_pos is None:
+        enemies = [self.enemy_pos, self.guard_pos]
+        enemies = [enemy for enemy in enemies if enemy is not None]
+        if len(enemies) == 0:
             return 0
-        row_player_pos, col_player_pos = self.player_pos[0], self.player_pos[1]
-        row_enemy_pos, col_enemy_pos = self.enemy_pos[0], self.enemy_pos[1]
 
+        directions = {4: "left", 5: "right", 6: "up", 7: "down"}
+        direction = directions[action]
 
-        if action == 4 or action == 5:
-            if row_player_pos != row_enemy_pos:
-                return 0
+        closest_enemy = self._get_closest_unidirectional_enemy(enemies, direction)
 
-        if action == 6 or action == 7:
-            if col_player_pos != col_enemy_pos:
-                return 0
+        if closest_enemy is None:
+            return 0
 
-        if ((action == 4 and col_enemy_pos < col_enemy_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "left"))
-        or (action == 5 and col_enemy_pos > col_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "right"))):
-            if abs(col_player_pos - col_enemy_pos) <= 3:
+        # at this point, bfs distance is just unidirectional distance because it was checked for it above
+        if self._bfs_distance(self.player_pos, closest_enemy) <= 3:
+            if list(closest_enemy) == self.enemy_pos:
                 self.enemy_pos = None
-                return 0.3
-
-        if ((action == 6 and row_enemy_pos < row_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "up"))
-        or (action == 7 and row_enemy_pos > row_player_pos and self._is_reachable_unidirectional(self.player_pos, self.enemy_pos, "down"))):
-            if abs(row_enemy_pos - row_player_pos) <= 3:
-                self.enemy_pos = None
-                return 0.3
+            else:
+                self.guard_pos = None
+            return 0.3
 
         return 0
 
@@ -318,6 +351,7 @@ class Game:
         # how many ticks of freeze status are left (normalized)
         freeze_status = (np.full((self.grid_size, self.grid_size), self.freeze_ticks / 3.0, dtype=np.float32))
         key = (np.zeros_like(self. grid, dtype=np.float32))
+        guard = (np.zeros_like(self. grid, dtype=np.float32))
 
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
@@ -328,10 +362,13 @@ class Game:
             freeze[self.freeze_pos[0], self.freeze_pos[1]] = 1.0
         if self.key_pos is not None:
             key[self.key_pos[0], self.key_pos[1]] = 1.0
+        if self.guard_pos is not None:
+            guard[self.guard_pos[0], self.guard_pos[1]] = 1.0
 
         goal = (self.exit_pos[0], self.exit_pos[1])
         return np.stack([walls, player, exit_, enemy, freeze,
-                               freeze_status, self._distance_map(goal), key],
+                               freeze_status, self._distance_map(goal), key,
+                               guard],
                                axis=0)
 
 
