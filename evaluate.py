@@ -13,7 +13,7 @@ policy_kwargs = dict(
 
 model = PPO.load(
     # "version_history/1_pre_freeze/zips/roguelike_ppo_12.zip",
-    "version_history/3_shoot/zips/key_and_guard_ppo_1.zip",
+    "version_history/4_key_and_guard/zips/key_and_guard_ppo_1.zip",
     env=env,
     custom_objects={
         "device": "cpu",
@@ -28,10 +28,10 @@ n_won = 0
 n_lost = 0
 n_truncated = 0
 
-for i in range(10000):
+for i in range(1000):
     obs, info = env.reset()
 
-    for step in range(200):
+    for step in range(100):
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = env.step(action)
 
@@ -42,7 +42,7 @@ for i in range(10000):
                 n_won += 1
             break
 
-        if step == 199:
+        if step == 99:
             n_truncated += 1
 
 print(n_won, n_lost, n_truncated)
