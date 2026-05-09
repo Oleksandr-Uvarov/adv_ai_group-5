@@ -14,7 +14,7 @@ class GameEnv(gym.Env):
         # channel (exit, enemy, powerup, etc.)
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(9, grid_size, grid_size),  # channel per entity
+            shape=(10, grid_size, grid_size),  # channel per entity
             dtype=np.float32
         )
 
@@ -41,8 +41,9 @@ class GameEnv(gym.Env):
         g = self.game
         grid_display = [['#' if g.grid[r, c] == 1 else '.' for c in range(g.grid_size)] for r in range(g.grid_size)]
         grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
-        if g.enemy_pos is not None:
-            grid_display[g.enemy_pos[0]][g.enemy_pos[1]] = 'E'
+        for enemy_pos in g.melee_poses:
+            if enemy_pos is not None:
+                grid_display[enemy_pos[0]][enemy_pos[1]] = 'E'
         grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
         if g.freeze_pos is not None:
             grid_display[g.freeze_pos[0]][g.freeze_pos[1]] = 'F'

@@ -1,0 +1,20 @@
+model = PPO("CnnPolicy",
+            env,
+            policy_kwargs=policy_kwargs,
+            n_steps=2048,
+            batch_size=256,
+            n_epochs=10,
+            learning_rate=3e-4,
+            verbose=1,
+            tensorboard_log="./tb_logs/",
+            seed=42
+        )
+
+model.learn(total_timesteps=17_640_000)
+
+
+introducing the key and the guard
+
+performance:
+
+9800 123 77

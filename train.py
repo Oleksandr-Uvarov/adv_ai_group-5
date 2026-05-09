@@ -24,8 +24,8 @@ model = PPO("CnnPolicy",
             seed=42
         )
 
-model.learn(total_timesteps=33_000_000)
-model.save("versions/key_and_guard_ppo_1")
+model.learn(total_timesteps=6_500_000)
+model.save("versions/key_and_guard_ppo_3")
 print("Training done.")
 
 env.close()

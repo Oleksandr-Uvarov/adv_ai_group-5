@@ -13,7 +13,7 @@ policy_kwargs = dict(
 
 model = PPO.load(
     # "version_history/1_pre_freeze/zips/roguelike_ppo_12.zip",
-    "version_history/3_shoot/zips/key_and_guard_ppo_1.zip",
+    "versions/key_and_guard_ppo_2.zip",
     env=env,
     custom_objects={
         "device": "cpu",
@@ -28,21 +28,27 @@ n_won = 0
 n_lost = 0
 n_truncated = 0
 
-for i in range(10000):
+for i in range(10):
     obs, info = env.reset()
 
-    for step in range(200):
+    print("attempt", i)
+    for step in range(100):
+        env.render()
         action, _ = model.predict(obs)
+        print("action", action)
         obs, reward, done, truncated, info = env.step(action)
 
         if done:
-            if env.game.player_pos == env.game.enemy_pos:
-                n_lost += 1
-            else:
-                n_won += 1
+            for enemy_pos in env.game.melee_poses:
+                if enemy_pos == env.game.player_pos:
+                    n_lost += 1
+                    break
+                else:
+                    n_won += 1
+                    break
             break
 
-        if step == 199:
+        if step == 99:
             n_truncated += 1
 
 print(n_won, n_lost, n_truncated)
