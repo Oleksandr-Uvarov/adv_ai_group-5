@@ -2,9 +2,15 @@ from stable_baselines3 import PPO
 from env import GameEnv
 from smallgridcnn import SmallGridCNN
 import faulthandler
+from pg.pygame_renderer import Renderer
+import time
 faulthandler.enable()
 
-env = GameEnv(grid_size=10)
+env = GameEnv(grid_size=10, render_mode="human")
+renderer = Renderer(grid_size=10)
+
+STEP_DELAY = 1
+EPISODE_PAUSE = 3
 
 policy_kwargs = dict(
     features_extractor_class=SmallGridCNN,
@@ -30,19 +36,24 @@ n_truncated = 0
 
 for i in range(1000):
     obs, info = env.reset()
+    env.render()
 
-    for step in range(100):
+    for step in range(env.game.step_limit):
+        time.sleep(STEP_DELAY)
         action, _ = model.predict(obs)
         obs, reward, done, truncated, info = env.step(action)
+
+        env.render()
 
         if done:
             if env.game.player_pos == env.game.enemy_pos:
                 n_lost += 1
+            elif truncated:
+                n_truncated += 1
             else:
                 n_won += 1
             break
 
-        if step == 99:
-            n_truncated += 1
+
 
 print(n_won, n_lost, n_truncated)
