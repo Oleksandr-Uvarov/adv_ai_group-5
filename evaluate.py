@@ -19,7 +19,7 @@ policy_kwargs = dict(
 
 model = PPO.load(
     # "version_history/1_pre_freeze/zips/roguelike_ppo_12.zip",
-    "version_history/4_key_and_guard/zips/key_and_guard_ppo_1.zip",
+    "version_history/4_key_and_guard/zips/4_key_and_guard_ppo_1.zip",
     env=env,
     custom_objects={
         "device": "cpu",
