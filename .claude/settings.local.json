@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(grep -E '\\\\.\\(py|txt|md\\)$')"
+      "Bash(grep -E '\\\\.\\(py|txt|md\\)$')",
+      "Bash(Get-Content *)"
     ]
   }
 }
