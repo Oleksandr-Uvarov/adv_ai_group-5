@@ -46,12 +46,14 @@ for i in range(1000):
         env.render()
 
         if done:
-            if env.game.player_pos == env.game.enemy_pos:
-                n_lost += 1
-            elif truncated:
-                n_truncated += 1
-            else:
-                n_won += 1
+            for enemy_pos in env.game.melee_poses:
+                if enemy_pos == env.game.player_pos:
+                    n_lost += 1
+                    break
+                elif truncated:
+                    n_truncated += 1
+                else:
+                    n_won += 1
             break
 
 

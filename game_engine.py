@@ -37,22 +37,30 @@ class Game:
             if len(floor_cells) < 4:
                 continue
 
-            positions = random.sample(floor_cells, 5)
+            positions = random.sample(floor_cells, 6)
             self.player_pos = list(positions[0])
             self.exit_pos   = list(positions[1])
-            self.enemy_pos  = list(positions[2])
+            enemy_pos  = list(positions[2])
             self.freeze_pos = list(positions[3])
             self.key_pos = list(positions[4])
             self.guard_pos = self._initialize_guard_pos()
+            enemy_2_pos = list(positions[5])
             self.freeze_ticks = 0
             self.has_key = False
+            self.melee_poses = [enemy_pos, enemy_2_pos]
+
+            melee_valid = all(
+                self._is_reachable(self.player_pos, pos) and self._bfs_distance(self.player_pos, pos) > 4
+                for pos in self.melee_poses
+            )
+            if not melee_valid:
+                continue
+
 
             if (self._is_reachable(self.player_pos, self.exit_pos)
-                    and self._is_reachable(self.player_pos, self.enemy_pos)
                     and self._is_reachable(self.player_pos, self.freeze_pos)
                     and self._is_reachable(self.player_pos, self.key_pos)
                     and self._is_guard_reachable()
-                    and self._bfs_distance(self.player_pos, self.enemy_pos) >= 4
                     and self._bfs_distance(self.player_pos, self.key_pos) >= 2
                     and self._bfs_distance(self.player_pos, self.exit_pos) >= 4
                     and self.guard_pos is not None):
@@ -162,7 +170,7 @@ class Game:
 
         new_goal_dist = self._bfs_distance(self.player_pos, goal_pos)
 
-        # if old exit distance is greater than new exist distance,
+        # if old exit distance is greater than new exit distance,
         # then reward is positive.
         reward = (old_goal_dist - new_goal_dist) * 0.1
 
@@ -192,7 +200,7 @@ class Game:
 
     def step(self, action):
         """
-        Actions: 0=up, 1=down, 2=left, 3=right, 4=shoot left, 5=shoot right, 6=shoot up, shoot down
+        Actions: 0=up, 1=down, 2=left, 3=right, 4=shoot left, 5=shoot right, 6=shoot up, 7=shoot down
         Returns: state, reward, done
         """
         if self.done:
@@ -201,17 +209,16 @@ class Game:
         terminated = False
         truncated = False
 
-        old_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos) if self.enemy_pos is not None else float("inf")
 
         if action < 4:
             reward, terminated = self._move_agent(action, terminated)
         else:
             reward = self._shoot(action)
 
-        if not terminated and self.enemy_pos is not None:
+        if not terminated and any(melee_pos is not None for melee_pos in self.melee_poses):
             # checking for terminated status because if player has reached the exit
             # then the enemy's last step isn't relevant
-            terminated, reward = self._next_enemy_action(terminated, reward, old_enemy_dist)
+            terminated, reward = self._next_enemy_action(terminated, reward)
 
 
         self.steps += 1
@@ -222,53 +229,64 @@ class Game:
 
         return self._get_state(), reward, terminated, truncated
 
-    def _move_melee_enemy(self):
-        """Moves melee enemy one step closer to the player using BFS."""
-        start = tuple(self.enemy_pos)
+    def _move_melee_enemies(self):
+        """Moves melee enemies two steps closer to the player using BFS."""
+        starts = [tuple(melee_pos) if melee_pos is not None else None for melee_pos in self.melee_poses]
         goal  = tuple(self.player_pos)
 
-        if start == goal:
-            return
+        for i in range(len(starts)):
+            if starts[i] == goal or starts[i] is None:
+                continue
 
-        # BFS: visited maps each cell to the cell it was reached from
-        visited = {start: None}
-        queue = deque([start])
+            # BFS: visited maps each cell to the cell it was reached from
+            visited = {starts[i]: None}
+            queue = deque([starts[i]])
 
-        while queue:
-            current = queue.popleft()
-            if current == goal:
-                break
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                nr, nc = current[0] + dr, current[1] + dc
-                neighbor = (nr, nc)
-                if neighbor not in visited and self.grid[nr, nc] != WALL:
-                    visited[neighbor] = current
-                    queue.append(neighbor)
+            while queue:
+                current = queue.popleft()
+                if current == goal:
+                    break
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = current[0] + dr, current[1] + dc
+                    neighbor = (nr, nc)
+                    if neighbor not in visited and self.grid[nr, nc] != WALL:
+                        visited[neighbor] = current
+                        queue.append(neighbor)
 
-        # Trace back from goal to find the first step
-        current = goal
-        while visited[current] != start:
-            current = visited[current]
+            # Trace back from goal to find the first step
+            current = goal
+            while visited[current] != starts[i]:
+                current = visited[current]
 
-        self.enemy_pos = list(current)
+            starts[i] = list(current)
 
-    def _next_enemy_action(self, terminated, reward, old_enemy_dist):
+        return [list(pos) if pos is not None else None for pos in starts]
+
+    def _next_enemy_action(self, terminated, reward):
         if self.freeze_ticks > 0:
             self.freeze_ticks -= 1
             return terminated, reward
 
-        self._move_melee_enemy()
-        self._move_melee_enemy()
+        old_enemy_dist = sum(
+            self._bfs_distance(self.player_pos, melee_pos)
+            for melee_pos in self.melee_poses if melee_pos is not None
+        )
 
-        if self.enemy_pos == self.player_pos:
-            reward = -1.0
-            terminated = True
-            self.done = True
-            return terminated, reward
+        self.melee_poses = self._move_melee_enemies()
+        self.melee_poses = self._move_melee_enemies()
+
+        for melee_pos in self.melee_poses:
+            if melee_pos == self.player_pos:
+                reward = -1.0
+                terminated = True
+                self.done = True
+                return terminated, reward
 
 
-        new_enemy_dist = self._bfs_distance(self.player_pos, self.enemy_pos)
-
+        new_enemy_dist = sum(
+            self._bfs_distance(self.player_pos, melee_pos)
+            for melee_pos in self.melee_poses if melee_pos is not None
+        )
         reward -= (old_enemy_dist - new_enemy_dist) * 0.05
 
         return terminated, reward
@@ -293,7 +311,7 @@ class Game:
         return closest_enemy
 
     def _shoot(self, action):
-        enemies = [self.enemy_pos, self.guard_pos]
+        enemies = [*self.melee_poses, self.guard_pos]
         enemies = [enemy for enemy in enemies if enemy is not None]
         if len(enemies) == 0:
             return 0
@@ -308,10 +326,12 @@ class Game:
 
         # at this point, bfs distance is just unidirectional distance because it was checked for it above
         if self._bfs_distance(self.player_pos, closest_enemy) <= 3:
-            if list(closest_enemy) == self.enemy_pos:
-                self.enemy_pos = None
-            else:
+            if list(closest_enemy) == self.guard_pos:
                 self.guard_pos = None
+            else:
+                for i in range(len(self.melee_poses)):
+                    if list(closest_enemy) == self.melee_poses[i]:
+                        self.melee_poses[i] = None
             return 0.3
 
         return 0
@@ -345,31 +365,37 @@ class Game:
         walls = (self.grid == WALL).astype(np.float32)
         player = (np.zeros_like(self.grid, dtype=np.float32))
         exit_ = (np.zeros_like(self.grid, dtype=np.float32))
-        enemy = (np.zeros_like(self.grid, dtype=np.float32))
         freeze = (np.zeros_like(self.grid, dtype=np.float32))
         # separate channel where every tile has the same value -
         # how many ticks of freeze status are left (normalized)
         freeze_status = (np.full((self.grid_size, self.grid_size), self.freeze_ticks / 3.0, dtype=np.float32))
         key = (np.zeros_like(self. grid, dtype=np.float32))
         guard = (np.zeros_like(self. grid, dtype=np.float32))
+        enemies = [np.zeros_like(self.grid, dtype=np.float32) for enemy in self.melee_poses]
+
 
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
         exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
-        if self.enemy_pos is not None:
-            enemy[self.enemy_pos[0], self.enemy_pos[1]] = 1.0
         if self.freeze_pos is not None:
             freeze[self.freeze_pos[0], self.freeze_pos[1]] = 1.0
         if self.key_pos is not None:
             key[self.key_pos[0], self.key_pos[1]] = 1.0
         if self.guard_pos is not None:
             guard[self.guard_pos[0], self.guard_pos[1]] = 1.0
+        for i in range(len(self.melee_poses)):
+            enemy_pos = self.melee_poses[i]
+            if enemy_pos is not None:
+                enemies[i][enemy_pos[0], enemy_pos[1]] = 1.0
 
-        goal = (self.exit_pos[0], self.exit_pos[1])
-        return np.stack([walls, player, exit_, enemy, freeze,
+        goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
+
+        initial = np.stack([walls, player, exit_, freeze,
                                freeze_status, self._distance_map(goal), key,
                                guard],
                                axis=0)
+        enemies = np.stack([enemy for enemy in enemies], axis=0)
+        return np.concatenate([initial, enemies], axis=0)
 
 
     def _floor_cells(self):
