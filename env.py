@@ -16,11 +16,14 @@ class GameEnv(gym.Env):
         self.render_mode = render_mode
         self._renderer = None
 
-        # What the agent sees: a grid_size x grid_size grid for every
-        # channel (exit, enemy, powerup, etc.)
+        # What the agent sees: one grid_size x grid_size channel per entity
+        # (walls, player, exit, freeze, ..., one channel per enemy). Derive the
+        # channel count from a real observation so the space stays correct if the
+        # number of enemies (and therefore channels) ever changes.
+        obs = self.game.reset()
         self.observation_space = spaces.Box(
             low=0, high=1,
-            shape=(10, grid_size, grid_size),  # channel per entity
+            shape=obs.shape,
             dtype=np.float32
         )
 

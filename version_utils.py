@@ -1,91 +1,194 @@
+import json
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 
-def _fmt(key, val, param_display):
-    return param_display.get(key, str(val))
+# --------------------------------------------------------------------------
+# Collectors
+# --------------------------------------------------------------------------
+
+def read_git_info():
+    """Current commit hash + whether the working tree has uncommitted changes.
+
+    Returns ``{"commit": None, "dirty": None}`` if git isn't available (e.g. on
+    a remote worker that only received a few source files). Call this *locally*
+    and pass the result through to remote training so the commit is still
+    recorded (see modal_train.py)."""
+    def _run(args):
+        try:
+            return subprocess.check_output(args, stderr=subprocess.DEVNULL).decode().strip()
+        except Exception:
+            return None
+
+    commit = _run(["git", "rev-parse", "HEAD"])
+    status = _run(["git", "status", "--porcelain"])
+    return {"commit": commit, "dirty": None if status is None else bool(status)}
 
 
-def _format_params_text(features_dim, ppo_policy, ppo_params, param_display):
-    lines = [
-        "Parameters:",
-        "",
-        f"    features_dim (policy_kwargs): {features_dim}",
-        "",
-        "    PPO:",
-        "",
-        f"        {ppo_policy}",
-    ]
-    for key, val in ppo_params.items():
-        lines.append(f"        {key}={_fmt(key, val, param_display)}")
-    return "\n".join(lines)
+def _lib_versions():
+    versions = {}
+    for name in ("stable_baselines3", "torch", "gymnasium", "numpy"):
+        try:
+            versions[name] = __import__(name).__version__
+        except Exception:
+            versions[name] = None
+    return versions
 
 
-def _parse_params(params_section):
-    params = {}
-    in_ppo = False
-    for line in params_section.splitlines():
-        s = line.strip()
-        if not s or s == "Parameters:":
-            continue
-        if s == "PPO:":
-            in_ppo = True
-            continue
-        if not in_ppo:
-            if ": " in s:
-                k, _, v = s.partition(": ")
-                params[k] = v
-        else:
-            if "=" in s:
-                k, _, v = s.partition("=")
-                params[f"PPO.{k}"] = v
-            else:
-                params["PPO.policy"] = s
-    return params
+def env_signature(env):
+    """Describe the environment an agent is trained on: observation shape, grid
+    size, entity counts, action space and reward coefficients.
 
+    Pass a freshly constructed ``GameEnv`` (not a vectorised wrapper) so the
+    entity counts reflect a clean spawn. This is the information you need to know
+    whether a saved checkpoint is even loadable into a given env (the channel
+    count lives in ``obs_shape[0]``)."""
+    from game_engine import Game
 
-def _current_params(features_dim, ppo_policy, ppo_params, param_display):
+    game = env.game
     return {
-        "features_dim (policy_kwargs)": str(features_dim),
-        "PPO.policy": ppo_policy,
-        **{f"PPO.{k}": _fmt(k, v, param_display) for k, v in ppo_params.items()},
+        "obs_shape": list(env.observation_space.shape),
+        "grid_size": game.grid_size,
+        "n_melee": sum(1 for m in game.melee_poses if m is not None),
+        "n_guard": int(game.guard_pos is not None),
+        "action_dim": int(env.action_space.n),
+        "reward_coeffs": Game.reward_coeffs(),
     }
 
 
-def write_version_file(n, version_differences_dir,
-                       features_dim, ppo_policy, ppo_params, param_display,
-                       developer_comment=""):
-    params_text = _format_params_text(features_dim, ppo_policy, ppo_params, param_display)
+# --------------------------------------------------------------------------
+# Diffing (operates on the machine-readable records, not on the text)
+# --------------------------------------------------------------------------
 
-    if n == 1:
-        diff_content = params_text
-    else:
-        prev_file = Path(version_differences_dir) / f"version_{n - 1}.txt"
-        if prev_file.exists():
-            prev_text = prev_file.read_text(encoding="utf-8")
-            idx = prev_text.find("Parameters:")
-            prev_params = _parse_params(prev_text[idx:]) if idx != -1 else {}
+def _flatten(d, prefix=""):
+    out = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(_flatten(v, key + "."))
         else:
-            prev_params = {}
+            out[key] = v
+    return out
 
-        curr_params = _current_params(features_dim, ppo_policy, ppo_params, param_display)
-        changes = []
-        for key in sorted(set(prev_params) | set(curr_params)):
-            pv, cv = prev_params.get(key), curr_params.get(key)
-            if pv != cv:
-                if pv is None:
-                    changes.append(f"    Added {key}: {cv}")
-                elif cv is None:
-                    changes.append(f"    Removed {key}")
-                else:
-                    changes.append(f"    {key}: {pv} → {cv}")
 
-        change_block = "\n".join(changes) if changes else "    No parameters changed."
-        diff_content = (
-            f"What changed from the previous version:\n{change_block}\n\n"
-            f"Developer comment: {developer_comment}\n\n"
-            f"{params_text}"
-        )
+def _load_prev_record(version_differences_dir, n):
+    prev = Path(version_differences_dir) / f"version_{n - 1}.json"
+    if prev.exists():
+        try:
+            return json.loads(prev.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+    return None
 
-    version_file = Path(version_differences_dir) / f"version_{n}.txt"
-    version_file.write_text(diff_content, encoding="utf-8")
-    return version_file
+
+def _format_diff(prev_record, curr_record):
+    if prev_record is None:
+        return "    (no previous machine-readable version to compare against)"
+
+    # Only diff the substantive fields - skip timestamps, git and lib versions.
+    fields = ("training", "env")
+    prev = _flatten({k: prev_record.get(k, {}) for k in fields})
+    curr = _flatten({k: curr_record.get(k, {}) for k in fields})
+
+    changes = []
+    for key in sorted(set(prev) | set(curr)):
+        pv, cv = prev.get(key), curr.get(key)
+        if pv != cv:
+            if key not in prev:
+                changes.append(f"    Added {key}: {cv}")
+            elif key not in curr:
+                changes.append(f"    Removed {key} (was {pv})")
+            else:
+                changes.append(f"    {key}: {pv} -> {cv}")
+    return "\n".join(changes) if changes else "    No tracked values changed."
+
+
+# --------------------------------------------------------------------------
+# Human-readable rendering
+# --------------------------------------------------------------------------
+
+def _format_txt(record, diff_block):
+    env = record["env"]
+    tr = record["training"]
+    rc = env["reward_coeffs"]
+    git = record.get("git") or {}
+    libs = record.get("libraries") or {}
+
+    commit = git.get("commit")
+    git_short = commit[:10] if commit else "unknown"
+    dirty = git.get("dirty")
+    dirty_str = " (dirty)" if dirty else ("" if dirty is False else " (unknown)")
+
+    ppo_lines = "\n".join(f"        {k}={v}" for k, v in tr["ppo_params"].items())
+    libs_str = "  ".join(f"{k} {v}" for k, v in libs.items() if v)
+
+    lines = [
+        "What changed from the previous version:",
+        diff_block,
+        "",
+        f"Developer comment: {record.get('developer_comment', '')}",
+        "",
+        "version recorded:",
+        f"obs_shape: {tuple(env['obs_shape'])}   grid_size: {env['grid_size']}",
+        f"enemies: {env['n_melee']} melee, {env['n_guard']} guard   action_dim: {env['action_dim']}",
+        f"reward coeffs: goal {rc['goal_step']}, enemy {rc['enemy_step']}, "
+        f"kill {rc['kill']}, freeze {rc['freeze']}",
+        "",
+        f"training: total_timesteps={tr['total_timesteps']}   n_envs={tr['n_envs']}",
+        f"git: {git_short}{dirty_str}   recorded: {record['recorded_at']}",
+        f"libraries: {libs_str}",
+        "",
+        "Parameters:",
+        "",
+        f"    features_dim (policy_kwargs): {tr['features_dim']}",
+        "",
+        "    PPO:",
+        "",
+        f"        {tr['policy']}",
+        ppo_lines,
+    ]
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------
+# Entry point
+# --------------------------------------------------------------------------
+
+def write_version_file(n, version_differences_dir, *,
+                       features_dim, ppo_policy, ppo_params,
+                       total_timesteps, n_envs, signature,
+                       developer_comment="", git_info=None):
+    """Write both a machine-readable ``version_{n}.json`` (source of truth) and a
+    human-readable ``version_{n}.txt`` (changelog + snapshot) for a trained run.
+
+    ``signature`` comes from :func:`env_signature`. ``git_info`` may be supplied
+    by the caller (for remote runs that lack a git checkout); otherwise it's
+    collected here. Returns the path to the ``.txt`` file."""
+    version_differences_dir = Path(version_differences_dir)
+
+    record = {
+        "version": n,
+        "recorded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "git": git_info if git_info is not None else read_git_info(),
+        "libraries": _lib_versions(),
+        "training": {
+            "total_timesteps": total_timesteps,
+            "n_envs": n_envs,
+            "features_dim": features_dim,
+            "policy": ppo_policy,
+            "ppo_params": dict(ppo_params),
+        },
+        "env": signature,
+        "developer_comment": developer_comment,
+    }
+
+    json_file = version_differences_dir / f"version_{n}.json"
+    json_file.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+    prev_record = _load_prev_record(version_differences_dir, n)
+    diff_block = _format_diff(prev_record, record)
+    txt_file = version_differences_dir / f"version_{n}.txt"
+    txt_file.write_text(_format_txt(record, diff_block), encoding="utf-8")
+
+    return txt_file

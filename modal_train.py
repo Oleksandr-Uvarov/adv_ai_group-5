@@ -16,13 +16,16 @@ volume = modal.Volume.from_name("rl-artifacts", create_if_missing=True)
     cpu=8,
     timeout=86400,
 )
-def train(directory: str, total_timesteps: int, developer_comment: str = ""):
+def train(directory: str, total_timesteps: int, developer_comment: str = "",
+          git_info: dict = None):
     from stable_baselines3 import PPO
     from stable_baselines3.common.env_util import make_vec_env
     from env import GameEnv
     from smallgridcnn import SmallGridCNN
-    from version_utils import write_version_file
+    from version_utils import write_version_file, env_signature
 
+    GRID_SIZE = 10
+    N_ENVS = 8
     FEATURES_DIM = 128
     PPO_POLICY = "CnnPolicy"
     PPO_PARAMS = dict(
@@ -33,7 +36,6 @@ def train(directory: str, total_timesteps: int, developer_comment: str = ""):
         verbose=1,
         seed=42,
     )
-    PARAM_DISPLAY = {"learning_rate": "3e-4"}
 
     version_dir = Path("/artifacts/version_history") / directory
     zips_dir = version_dir / "zips"
@@ -53,7 +55,7 @@ def train(directory: str, total_timesteps: int, developer_comment: str = ""):
 
     # n_envs - number of environments run in parallel.
     # 8 should multiply the FPS by 8, but in reality it's slower than that.
-    env = make_vec_env(lambda: GameEnv(grid_size=10), n_envs=8, seed=42)
+    env = make_vec_env(lambda: GameEnv(grid_size=GRID_SIZE), n_envs=N_ENVS, seed=42)
 
     model = PPO(PPO_POLICY,
                 env,
@@ -69,8 +71,14 @@ def train(directory: str, total_timesteps: int, developer_comment: str = ""):
 
     write_version_file(
         n, version_differences_dir,
-        FEATURES_DIM, PPO_POLICY, PPO_PARAMS, PARAM_DISPLAY,
-        developer_comment,
+        features_dim=FEATURES_DIM,
+        ppo_policy=PPO_POLICY,
+        ppo_params=PPO_PARAMS,
+        total_timesteps=total_timesteps,
+        n_envs=N_ENVS,
+        signature=env_signature(GameEnv(grid_size=GRID_SIZE)),
+        developer_comment=developer_comment,
+        git_info=git_info,
     )
     volume.commit()
     print(f"Saved: {model_name}_{n}")
@@ -82,4 +90,7 @@ def main(
     timesteps: int = 1_000_000,
     comment: str = "",
 ):
-    train.remote(directory, timesteps, comment)
+    # Collect git info locally - the remote worker only gets a few source files,
+    # not the .git directory, so it can't read the commit itself.
+    from version_utils import read_git_info
+    train.remote(directory, timesteps, comment, git_info=read_git_info())

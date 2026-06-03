@@ -33,7 +33,7 @@ from env import GameEnv
 from stable_baselines3 import PPO
 from smallgridcnn import SmallGridCNN
 from stable_baselines3.common.env_util import make_vec_env
-from version_utils import write_version_file
+from version_utils import write_version_file, env_signature
 
 
 version_dir = Path("version_history") / DIRECTORY
@@ -47,6 +47,8 @@ for d in (version_dir, zips_dir, tb_dir, version_differences_dir):
 n = len(list(zips_dir.iterdir())) + 1
 model_name = f"{DIRECTORY}_ppo"
 
+GRID_SIZE = 10
+N_ENVS = 8
 FEATURES_DIM = 128
 PPO_POLICY = "CnnPolicy"
 PPO_PARAMS = dict(
@@ -57,7 +59,6 @@ PPO_PARAMS = dict(
     verbose=1,
     seed=42,
 )
-PARAM_DISPLAY = {"learning_rate": "3e-4"}
 
 policy_kwargs = dict(
     features_extractor_class=SmallGridCNN,
@@ -66,7 +67,7 @@ policy_kwargs = dict(
 
 # n_envs - number of environments run in parallel.
 # 8 should multiply the FPS by 8, but in reality it's slower than that.
-env = make_vec_env(lambda: GameEnv(grid_size=10), n_envs=8, seed=42)
+env = make_vec_env(lambda: GameEnv(grid_size=GRID_SIZE), n_envs=N_ENVS, seed=42)
 
 model = PPO(PPO_POLICY,
             env,
@@ -82,7 +83,12 @@ env.close()
 
 version_file = write_version_file(
     n, version_differences_dir,
-    FEATURES_DIM, PPO_POLICY, PPO_PARAMS, PARAM_DISPLAY,
-    developer_comment,
+    features_dim=FEATURES_DIM,
+    ppo_policy=PPO_POLICY,
+    ppo_params=PPO_PARAMS,
+    total_timesteps=total_timesteps,
+    n_envs=N_ENVS,
+    signature=env_signature(GameEnv(grid_size=GRID_SIZE)),
+    developer_comment=developer_comment,
 )
 print(f"Version differences saved to {version_file}")

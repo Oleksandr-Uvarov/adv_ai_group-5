@@ -7,6 +7,30 @@ FLOOR = 0
 WALL  = 1
 
 class Game:
+    # Reward shaping coefficients. Kept here as a single source of truth so the
+    # exact values used can be logged with every trained version (see
+    # version_utils.env_signature / reward_coeffs).
+    REWARD_GOAL_STEP = 0.1    # per-tile progress toward the current goal
+    REWARD_ENEMY_STEP = 0.05  # per-tile change in distance to the nearest enemy
+    REWARD_KILL = 0.3         # shooting an enemy (melee or guard)
+    REWARD_KEY = 0.3          # picking up the key
+    REWARD_FREEZE = 0.15      # picking up the freeze power-up
+    REWARD_WIN = 1.0          # reaching the exit holding the key (+ speed bonus)
+    REWARD_LOSE = -1.0        # caught by an enemy, or grabbing the key past the guard
+
+    @classmethod
+    def reward_coeffs(cls):
+        """Reward coefficients as a plain dict, for logging/versioning."""
+        return {
+            "goal_step": cls.REWARD_GOAL_STEP,
+            "enemy_step": cls.REWARD_ENEMY_STEP,
+            "kill": cls.REWARD_KILL,
+            "key": cls.REWARD_KEY,
+            "freeze": cls.REWARD_FREEZE,
+            "win": cls.REWARD_WIN,
+            "lose": cls.REWARD_LOSE,
+        }
+
     def __init__(self, grid_size=10):
         self.grid_size = grid_size
         self.reset()
@@ -172,27 +196,27 @@ class Game:
 
         # if old exit distance is greater than new exit distance,
         # then reward is positive.
-        reward = (old_goal_dist - new_goal_dist) * 0.1
+        reward = (old_goal_dist - new_goal_dist) * self.REWARD_GOAL_STEP
 
         if self.key_pos and self.player_pos == self.key_pos:
             if self.guard_pos is not None:
-                reward = -1.0
+                reward = self.REWARD_LOSE
                 terminated = True
                 self.done = True
             else:
-                reward += 0.3
+                reward += self.REWARD_KEY
                 self.key_pos = None
                 self.has_key = True
 
         # Check win condition
         elif self.player_pos == self.exit_pos and self.has_key:
             speed_bonus = max(0.0, (50 - self.steps) / 50)
-            reward = 1.0 + speed_bonus
+            reward = self.REWARD_WIN + speed_bonus
             terminated = True
             self.done = True
 
         elif self.player_pos == self.freeze_pos:
-            reward += 0.15
+            reward += self.REWARD_FREEZE
             self._pickup_freeze_powerup()
         return reward, terminated
 
@@ -209,6 +233,11 @@ class Game:
         terminated = False
         truncated = False
 
+        # Distance to the nearest enemy *before* the player acts, so the
+        # enemy-proximity shaping can actually credit the player's own move.
+        # Only movement actions are shaped this way; shooting is rewarded by
+        # the kill bonus in _shoot instead.
+        old_enemy_dist = self._nearest_enemy_distance() if action < 4 else None
 
         if action < 4:
             reward, terminated = self._move_agent(action, terminated)
@@ -218,7 +247,7 @@ class Game:
         if not terminated and any(melee_pos is not None for melee_pos in self.melee_poses):
             # checking for terminated status because if player has reached the exit
             # then the enemy's last step isn't relevant
-            terminated, reward = self._next_enemy_action(terminated, reward)
+            terminated, reward = self._next_enemy_action(terminated, reward, old_enemy_dist)
 
 
         self.steps += 1
@@ -262,32 +291,36 @@ class Game:
 
         return [list(pos) if pos is not None else None for pos in starts]
 
-    def _next_enemy_action(self, terminated, reward):
+    def _nearest_enemy_distance(self):
+        """BFS distance from the player to the closest living enemy,
+        or None if every enemy has been killed."""
+        dists = [
+            self._bfs_distance(self.player_pos, melee_pos)
+            for melee_pos in self.melee_poses if melee_pos is not None
+        ]
+        return min(dists) if dists else None
+
+    def _next_enemy_action(self, terminated, reward, old_enemy_dist):
         if self.freeze_ticks > 0:
             self.freeze_ticks -= 1
             return terminated, reward
-
-        old_enemy_dist = sum(
-            self._bfs_distance(self.player_pos, melee_pos)
-            for melee_pos in self.melee_poses if melee_pos is not None
-        )
 
         self.melee_poses = self._move_melee_enemies()
         self.melee_poses = self._move_melee_enemies()
 
         for melee_pos in self.melee_poses:
             if melee_pos == self.player_pos:
-                reward = -1.0
+                reward = self.REWARD_LOSE
                 terminated = True
                 self.done = True
                 return terminated, reward
 
-
-        new_enemy_dist = sum(
-            self._bfs_distance(self.player_pos, melee_pos)
-            for melee_pos in self.melee_poses if melee_pos is not None
-        )
-        reward -= (old_enemy_dist - new_enemy_dist) * 0.05
+        # Reward opening up the gap to the nearest threat, penalise closing it.
+        # Using the nearest enemy (not the sum over all enemies) keeps this term
+        # on the same scale regardless of how many enemies are alive.
+        new_enemy_dist = self._nearest_enemy_distance()
+        if old_enemy_dist is not None and new_enemy_dist is not None:
+            reward += (new_enemy_dist - old_enemy_dist) * self.REWARD_ENEMY_STEP
 
         return terminated, reward
 
@@ -332,7 +365,7 @@ class Game:
                 for i in range(len(self.melee_poses)):
                     if list(closest_enemy) == self.melee_poses[i]:
                         self.melee_poses[i] = None
-            return 0.3
+            return self.REWARD_KILL
 
         return 0
 
@@ -371,7 +404,10 @@ class Game:
         freeze_status = (np.full((self.grid_size, self.grid_size), self.freeze_ticks / 3.0, dtype=np.float32))
         key = (np.zeros_like(self. grid, dtype=np.float32))
         guard = (np.zeros_like(self. grid, dtype=np.float32))
-        enemies = [np.zeros_like(self.grid, dtype=np.float32) for enemy in self.melee_poses]
+        # All melee enemies share a single channel: they are the same entity
+        # type, so the agent should react to any of them the same way. A
+        # different type of enemy (e.g. an archer) would get its own channel.
+        melee = np.zeros_like(self.grid, dtype=np.float32)
 
 
         # setting every object's position to 1 in the respective grid
@@ -383,19 +419,16 @@ class Game:
             key[self.key_pos[0], self.key_pos[1]] = 1.0
         if self.guard_pos is not None:
             guard[self.guard_pos[0], self.guard_pos[1]] = 1.0
-        for i in range(len(self.melee_poses)):
-            enemy_pos = self.melee_poses[i]
+        for enemy_pos in self.melee_poses:
             if enemy_pos is not None:
-                enemies[i][enemy_pos[0], enemy_pos[1]] = 1.0
+                melee[enemy_pos[0], enemy_pos[1]] = 1.0
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 
-        initial = np.stack([walls, player, exit_, freeze,
-                               freeze_status, self._distance_map(goal), key,
-                               guard],
-                               axis=0)
-        enemies = np.stack([enemy for enemy in enemies], axis=0)
-        return np.concatenate([initial, enemies], axis=0)
+        return np.stack([walls, player, exit_, freeze,
+                         freeze_status, self._distance_map(goal), key,
+                         guard, melee],
+                        axis=0)
 
 
     def _floor_cells(self):

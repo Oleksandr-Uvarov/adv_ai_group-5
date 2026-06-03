@@ -3,7 +3,15 @@
     "allow": [
       "Bash(grep -E '\\\\.\\(py|txt|md\\)$')",
       "Bash(Get-Content *)",
-      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\uni\\\\2nd_year\\\\advanced_ai\\\\adv_ai_group-5\\\\' -Filter '*.py' -Depth 0 | Select-Object -ExpandProperty Name\")"
+      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\uni\\\\2nd_year\\\\advanced_ai\\\\adv_ai_group-5\\\\' -Filter '*.py' -Depth 0 | Select-Object -ExpandProperty Name\")",
+      "Read(//mnt/c/uni/2nd_year/advanced_ai/**)",
+      "Bash(ls version_history/)",
+      "Bash(ls version_history/4_key_and_guard/zips/)",
+      "PowerShell(Get-ChildItem version_history | Select-Object -ExpandProperty Name; \"--- 4_key_and_guard zips ---\"; Get-ChildItem version_history\\\\4_key_and_guard\\\\zips | Select-Object -ExpandProperty Name; \"--- version_differences ---\"; Get-ChildItem version_differences | Select-Object -ExpandProperty Name)",
+      "PowerShell(Get-ChildItem version_differences\\\\4_key_and_guard | Select-Object -ExpandProperty Name | ForEach-Object { \"=== $_ ===\"; Get-Content \\(Join-Path 'version_differences\\\\4_key_and_guard' $_\\) })",
+      "PowerShell(python -c \"import torch, zipfile, io; z=zipfile.ZipFile\\(r'version_history\\\\4_key_and_guard\\\\zips\\\\4_key_and_guard_ppo_1.zip'\\); sd=torch.load\\(io.BytesIO\\(z.read\\('policy.pth'\\)\\), map_location='cpu'\\); k=[x for x in sd if 'features_extractor.cnn.0.weight' in x][0]; print\\('first conv weight shape:', tuple\\(sd[k].shape\\), '-> input channels =', sd[k].shape[1]\\)\")",
+      "PowerShell(python -c \"from env import GameEnv; e=GameEnv\\(grid_size=10\\); print\\('obs space:', e.observation_space.shape\\); o,_=e.reset\\(\\); print\\('obs shape:', o.shape\\); o,r,d,t,i=e.step\\(1\\); print\\('after step:', o.shape, 'reward', round\\(float\\(r\\),3\\)\\); print\\('melee channel sum \\(=living enemies on distinct cells\\):', float\\(o[8].sum\\(\\)\\)\\)\")",
+      "PowerShell(Remove-Item *)"
     ]
   }
 }

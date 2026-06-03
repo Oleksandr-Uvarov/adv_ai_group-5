@@ -2,12 +2,10 @@ from stable_baselines3 import PPO
 from env import GameEnv
 from smallgridcnn import SmallGridCNN
 import faulthandler
-from pg.pygame_renderer import Renderer
 import time
 faulthandler.enable()
 
 env = GameEnv(grid_size=10, render_mode="human")
-renderer = Renderer(grid_size=10)
 
 STEP_DELAY = 1
 EPISODE_PAUSE = 3
@@ -28,8 +26,6 @@ model = PPO.load(
 )
 
 
-obs, info = env.reset()
-
 n_won = 0
 n_lost = 0
 n_truncated = 0
@@ -45,15 +41,16 @@ for i in range(1000):
 
         env.render()
 
-        if done:
-            for enemy_pos in env.game.melee_poses:
-                if enemy_pos == env.game.player_pos:
-                    n_lost += 1
-                    break
-                elif truncated:
-                    n_truncated += 1
-                else:
-                    n_won += 1
+        # Classify the episode exactly once. A win is reaching the exit while
+        # holding the key; anything else terminal (caught by an enemy, or
+        # stepping on the key while the guard is alive) is a loss.
+        if done or truncated:
+            if truncated:
+                n_truncated += 1
+            elif env.game.player_pos == env.game.exit_pos and env.game.has_key:
+                n_won += 1
+            else:
+                n_lost += 1
             break
 
 

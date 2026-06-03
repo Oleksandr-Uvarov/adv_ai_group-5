@@ -36,7 +36,8 @@ class Renderer:
         blit("exit", game.exit_pos)
         blit("freeze", game.freeze_pos)
         blit("key", game.key_pos)
-        blit("enemy", game.enemy_pos)
+        for enemy_pos in game.melee_poses:
+            blit("enemy", enemy_pos)
         blit("guard", game.guard_pos)
         blit("player", game.player_pos)
 
