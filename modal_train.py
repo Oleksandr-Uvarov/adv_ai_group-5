@@ -18,6 +18,7 @@ volume = modal.Volume.from_name("rl-artifacts", create_if_missing=True)
 )
 def train(directory: str, total_timesteps: int, developer_comment: str = "",
           git_info: dict = None):
+    from datetime import datetime
     from stable_baselines3 import PPO
     from stable_baselines3.common.env_util import make_vec_env
     from env import GameEnv
@@ -64,7 +65,9 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
                 tensorboard_log=str(tb_dir),
                 )
 
+    start_dt = datetime.now()
     model.learn(total_timesteps=total_timesteps, tb_log_name=model_name)
+    end_dt = datetime.now()
     model.save(str(zips_dir / f"{model_name}_{n}"))
     print("Training done.")
     env.close()
@@ -79,6 +82,9 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
         signature=env_signature(GameEnv(grid_size=GRID_SIZE)),
         developer_comment=developer_comment,
         git_info=git_info,
+        started_at=start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        ended_at=end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+        duration_seconds=(end_dt - start_dt).total_seconds(),
     )
     volume.commit()
     print(f"Saved: {model_name}_{n}")

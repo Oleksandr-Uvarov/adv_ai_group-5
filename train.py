@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 from pathlib import Path
 
 DIRECTORY = "5_test"
@@ -76,7 +77,9 @@ model = PPO(PPO_POLICY,
             tensorboard_log=str(tb_dir),
             )
 
+start_dt = datetime.now()
 model.learn(total_timesteps=total_timesteps, tb_log_name=model_name)
+end_dt = datetime.now()
 model.save(str(zips_dir / f"{model_name}_{n}"))
 print("Training done.")
 env.close()
@@ -90,5 +93,8 @@ version_file = write_version_file(
     n_envs=N_ENVS,
     signature=env_signature(GameEnv(grid_size=GRID_SIZE)),
     developer_comment=developer_comment,
+    started_at=start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+    ended_at=end_dt.strftime("%Y-%m-%d %H:%M:%S"),
+    duration_seconds=(end_dt - start_dt).total_seconds(),
 )
 print(f"Version differences saved to {version_file}")

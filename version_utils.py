@@ -26,6 +26,15 @@ def read_git_info():
     return {"commit": commit, "dirty": None if status is None else bool(status)}
 
 
+def _format_duration(seconds):
+    if seconds is None:
+        return "unknown"
+    seconds = int(round(seconds))
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}h {m}m {s}s"
+
+
 def _lib_versions():
     versions = {}
     for name in ("stable_baselines3", "torch", "gymnasium", "numpy"):
@@ -114,6 +123,7 @@ def _format_txt(record, diff_block):
     rc = env["reward_coeffs"]
     git = record.get("git") or {}
     libs = record.get("libraries") or {}
+    timing = record.get("timing") or {}
 
     commit = git.get("commit")
     git_short = commit[:10] if commit else "unknown"
@@ -136,6 +146,8 @@ def _format_txt(record, diff_block):
         f"kill {rc['kill']}, freeze {rc['freeze']}",
         "",
         f"training: total_timesteps={tr['total_timesteps']}   n_envs={tr['n_envs']}",
+        f"duration: {timing.get('duration', 'unknown')}   "
+        f"(started {timing.get('started_at')}, ended {timing.get('ended_at')})",
         f"git: {git_short}{dirty_str}   recorded: {record['recorded_at']}",
         f"libraries: {libs_str}",
         "",
@@ -158,18 +170,26 @@ def _format_txt(record, diff_block):
 def write_version_file(n, version_differences_dir, *,
                        features_dim, ppo_policy, ppo_params,
                        total_timesteps, n_envs, signature,
-                       developer_comment="", git_info=None):
+                       developer_comment="", git_info=None,
+                       started_at=None, ended_at=None, duration_seconds=None):
     """Write both a machine-readable ``version_{n}.json`` (source of truth) and a
     human-readable ``version_{n}.txt`` (changelog + snapshot) for a trained run.
 
     ``signature`` comes from :func:`env_signature`. ``git_info`` may be supplied
     by the caller (for remote runs that lack a git checkout); otherwise it's
-    collected here. Returns the path to the ``.txt`` file."""
+    collected here. ``started_at``/``ended_at`` are timestamp strings and
+    ``duration_seconds`` the wall-clock training time. Returns the ``.txt`` path."""
     version_differences_dir = Path(version_differences_dir)
 
     record = {
         "version": n,
         "recorded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "timing": {
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "duration_seconds": duration_seconds,
+            "duration": _format_duration(duration_seconds),
+        },
         "git": git_info if git_info is not None else read_git_info(),
         "libraries": _lib_versions(),
         "training": {

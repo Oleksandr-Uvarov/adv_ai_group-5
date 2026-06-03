@@ -1,0 +1,7 @@
+1. Starting detached (so that you can't terminate it by closing the terminal with Ctrl+C)
+
+modal run --detach modal_train.py --directory "4_key_and_guard" --timesteps 1000000 --comment "..."
+
+2. Starting attached
+
+modal run modal_train.py --directory "4_key_and_guard" --timesteps 1000000 --comment "increased batch size"
