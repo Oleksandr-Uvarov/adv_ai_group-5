@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(grep -E '\\\\.\\(py|txt|md\\)$')",
-      "Bash(Get-Content *)"
+      "Bash(Get-Content *)",
+      "Bash(powershell.exe -Command \"Get-ChildItem 'C:\\\\uni\\\\2nd_year\\\\advanced_ai\\\\adv_ai_group-5\\\\' -Filter '*.py' -Depth 0 | Select-Object -ExpandProperty Name\")"
     ]
   }
 }
