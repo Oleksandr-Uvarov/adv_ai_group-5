@@ -79,16 +79,20 @@ class Game:
             if len(floor_cells) < 6:
                 continue
 
-            positions = random.sample(floor_cells, 6)
+            positions = random.sample(floor_cells, 5)
             self.player_pos = list(positions[0])
             self.exit_pos   = list(positions[1])
             self.freeze_available = True
             self.key_pos = list(positions[2])
-            self.guard_pos = self._initialize_guard_pos()
+            # The guard sits next to the key and the warlock next to the exit:
+            # each is anchored to the objective it guards rather than dropped on
+            # a random floor cell. Either can come back None if its objective is
+            # walled in on all four sides (handled by the reachability check).
+            self.guard_pos = self._adjacent_floor_pos(self.key_pos)
             enemy_pos  = list(positions[3])
             enemy_2_pos = list(positions[4])
             self.melee_poses = [enemy_pos, enemy_2_pos]
-            self.warlock_pos = list(positions[5])
+            self.warlock_pos = self._adjacent_floor_pos(self.exit_pos)
             self.warlock_fireball_pos = None
             self.warlock_fireball_dir = None
             self.warlock_fireball_ticks = 0
@@ -105,12 +109,23 @@ class Game:
                 continue
 
 
-            if (self._is_reachable(self.player_pos, self.exit_pos)
+            # guard_pos / warlock_pos are tested first so the reachability
+            # helpers below never receive None: _adjacent_floor_pos returns None
+            # when an objective is walled in on every side, and the unidirectional
+            # check would otherwise crash on tuple(None).
+            #
+            # The guard needs the unidirectional, key-aware check (it must be
+            # killable without stepping onto the key, which would wake it). The
+            # warlock needs no such guarantee - the player wins by reaching the
+            # exit, so plain reachability is enough to confirm it can be engaged.
+            if (self.guard_pos is not None
+                    and self.warlock_pos is not None
+                    and self._is_reachable(self.player_pos, self.exit_pos)
                     and self._is_reachable(self.player_pos, self.key_pos)
+                    and self._is_reachable(self.player_pos, self.warlock_pos)
                     and self._is_reachable_unidirectional_any(self.guard_pos)
                     and self._bfs_distance(self.player_pos, self.key_pos) >= 2
-                    and self._bfs_distance(self.player_pos, self.exit_pos) >= 4
-                    and self.guard_pos is not None):
+                    and self._bfs_distance(self.player_pos, self.exit_pos) >= 4):
                 break
 
         self.done = False
@@ -199,8 +214,12 @@ class Game:
                     queue.append((nr, nc))
         return float("inf") # if exit is unreachable (blocked by walls, which shouldn't normally happen)
 
-    def _initialize_guard_pos(self):
-        r, c = self.key_pos
+    def _adjacent_floor_pos(self, anchor):
+        """First floor cell orthogonally adjacent to ``anchor`` (or None if the
+        anchor is walled in on every side). Used to seat the guard beside the
+        key and the warlock beside the exit, so each stands watch over the
+        objective it protects instead of being dropped on a random floor cell."""
+        r, c = anchor
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nr, nc = r + dr, c + dc
             if self.grid[nr, nc] == FLOOR:
@@ -400,17 +419,27 @@ class Game:
 
     def _launch_fireball(self):
         """Spawn a fireball at the warlock heading toward the player whenever the
-        player shares the warlock's row or column. The fireball travels straight
-        and passes through walls, so no line-of-sight check is needed; it just
-        needs the player to be axis-aligned to have a direction to fly in."""
+        player shares the warlock's row or column AND is within range. The
+        fireball travels straight and passes through walls, so no line-of-sight
+        check is needed; it just needs the player to be axis-aligned to have a
+        direction to fly in."""
         wr, wc = self.warlock_pos
         pr, pc = self.player_pos
         if wr == pr and wc != pc:
             direction = (0, 1) if pc > wc else (0, -1)
+            distance = abs(pc - wc)
         elif wc == pc and wr != pr:
             direction = (1, 0) if pr > wr else (-1, 0)
+            distance = abs(pr - wr)
         else:
             return  # player is not aligned with the warlock; nothing to fire at
+
+        # Only fire a shot that can actually land. The fireball despawns after
+        # WARLOCK_FIREBALL_RANGE tiles, so launching at a farther target just
+        # puts a harmless fireball in the player's lane every step and teaches
+        # the agent to fear shots that can never reach it.
+        if distance > self.WARLOCK_FIREBALL_RANGE:
+            return
 
         self.warlock_fireball_dir = direction
         self.warlock_fireball_pos = list(self.warlock_pos)
@@ -446,6 +475,27 @@ class Game:
         self.warlock_fireball_pos = None
         self.warlock_fireball_dir = None
         self.warlock_fireball_ticks = 0
+
+    def _fireball_danger_tiles(self):
+        """Tiles the in-flight fireball occupies now plus the ones it will still
+        sweep through before its range runs out, clipped to the grid edge (it
+        flies through walls, so walls are not excluded). The observation marks
+        this whole corridor instead of the single current tile: from one tile the
+        agent cannot tell which way the fireball is heading or how far it can
+        still reach, so it learns to fear any fireball in its lane. The corridor
+        shows exactly which tiles can still be hit - and, by omission, that tiles
+        beyond the range are safe."""
+        if self.warlock_fireball_pos is None:
+            return []
+        dr, dc = self.warlock_fireball_dir
+        r, c = self.warlock_fireball_pos
+        tiles = [[r, c]]
+        for _ in range(self.warlock_fireball_ticks):
+            r, c = r + dr, c + dc
+            if not (0 <= r < self.grid_size and 0 <= c < self.grid_size):
+                break
+            tiles.append([r, c])
+        return tiles
 
 
     def _activate_freeze_powerup(self):
@@ -583,8 +633,8 @@ class Game:
                 melee[enemy_pos[0], enemy_pos[1]] = 1.0
         if self.warlock_pos is not None:
             warlock[self.warlock_pos[0], self.warlock_pos[1]] = 1.0
-        if self.warlock_fireball_pos is not None:
-            warlock_fireball[self.warlock_fireball_pos[0], self.warlock_fireball_pos[1]] = 1.0
+        for tile in self._fireball_danger_tiles():
+            warlock_fireball[tile[0], tile[1]] = 1.0
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 

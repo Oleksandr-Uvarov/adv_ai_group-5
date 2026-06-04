@@ -9,3 +9,8 @@ modal run modal_train.py --directory "4_key_and_guard" --timesteps 1000000 --com
 
 tensorboard
 tensorboard --logdir tb_logs
+
+
+3. copy and paste everything (avoid --force if you don't want to overwrite files)
+
+modal volume get rl-artifacts /version_history/4_key_and_guard ./version_history/ --force

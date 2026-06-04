@@ -37,7 +37,7 @@ def evaluate(model_path, pygame_overview=False, n_episodes=10000, grid_size=10):
         for step in range(env.game.step_limit):
             if pygame_overview:
                 time.sleep(STEP_DELAY)
-            action, _ = model.predict(obs)
+            action, _ = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = env.step(action)
 
             if pygame_overview:

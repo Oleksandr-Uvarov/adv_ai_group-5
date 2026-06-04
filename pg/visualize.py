@@ -37,7 +37,7 @@ while True:
 
     for _ in range(env.game.step_limit):
         time.sleep(STEP_DELAY)
-        action, _ = model.predict(obs)
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, _ = env.step(action)
         renderer.draw(env.game)
         if terminated or truncated:
