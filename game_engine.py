@@ -29,6 +29,7 @@ class Game:
     FREEZE_TICKS = 2
     SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
     N_SPIKES = 3
+    TOTAL_MELEE_ENEMIES = 4
 
     @classmethod
     def reward_coeffs(cls):
@@ -95,6 +96,7 @@ class Game:
             enemy_pos  = list(positions[3])
             enemy_2_pos = list(positions[4])
             self.melee_poses = [enemy_pos, enemy_2_pos]
+            self.total_melee_enemies = 2
             self.warlock_pos = list(positions[5])
             self.warlock_fireball_pos = None
             self.warlock_fireball_dir = None
