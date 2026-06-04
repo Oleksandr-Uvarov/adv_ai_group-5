@@ -18,6 +18,8 @@ class Game:
     REWARD_WIN = 1.0          # reaching the exit holding the key (+ speed bonus)
     REWARD_LOSE = -1.0        # caught by an enemy, or grabbing the key past the guard
 
+    SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
+
     @classmethod
     def reward_coeffs(cls):
         """Reward coefficients as a plain dict, for logging/versioning."""
@@ -29,6 +31,7 @@ class Game:
             "freeze": cls.REWARD_FREEZE,
             "win": cls.REWARD_WIN,
             "lose": cls.REWARD_LOSE,
+            "shoot_range": cls.SHOOT_RANGE
         }
 
     def __init__(self, grid_size=10):
@@ -92,6 +95,9 @@ class Game:
 
         self.done = False
         self.steps = 0
+        # Straight-line path of the most recent shot, for rendering only. Set by
+        # _shoot, cleared every step. Has no effect on the agent's observation.
+        self.last_shot = None
         return self._get_state()
 
     def _is_reachable(self, start, goal):
@@ -232,6 +238,8 @@ class Game:
 
         terminated = False
         truncated = False
+        # Cleared each step; only a shoot action repopulates it (for rendering).
+        self.last_shot = None
 
         # Distance to the nearest enemy *before* the player acts, so the
         # enemy-proximity shaping can actually credit the player's own move.
@@ -344,30 +352,57 @@ class Game:
         return closest_enemy
 
     def _shoot(self, action):
-        enemies = [*self.melee_poses, self.guard_pos]
-        enemies = [enemy for enemy in enemies if enemy is not None]
-        if len(enemies) == 0:
-            return 0
-
         directions = {4: "left", 5: "right", 6: "up", 7: "down"}
+        deltas = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0)}
         direction = directions[action]
 
-        closest_enemy = self._get_closest_unidirectional_enemy(enemies, direction)
+        enemies = [*self.melee_poses, self.guard_pos]
+        enemies = [enemy for enemy in enemies if enemy is not None]
 
-        if closest_enemy is None:
-            return 0
+        closest_enemy = (
+            self._get_closest_unidirectional_enemy(enemies, direction)
+            if enemies else None
+        )
 
-        # at this point, bfs distance is just unidirectional distance because it was checked for it above
-        if self._bfs_distance(self.player_pos, closest_enemy) <= 3:
+        reward = 0
+        hit = None
+        hit_sprite = None
+        # at this point, bfs distance is just unidirectional distance because it
+        # was checked for it in _get_closest_unidirectional_enemy
+        if (closest_enemy is not None
+                and self._bfs_distance(self.player_pos, closest_enemy) <= self.SHOOT_RANGE):
+            hit = list(closest_enemy)
             if list(closest_enemy) == self.guard_pos:
                 self.guard_pos = None
+                hit_sprite = "guard"
             else:
+                hit_sprite = "enemy"
                 for i in range(len(self.melee_poses)):
                     if list(closest_enemy) == self.melee_poses[i]:
                         self.melee_poses[i] = None
-            return self.REWARD_KILL
+            reward = self.REWARD_KILL
 
-        return 0
+        # Record the projectile's path purely for rendering; the game logic above
+        # is unchanged (still hitscan) and the observation never sees this.
+        self.last_shot = self._build_shot_path(deltas[direction], hit, hit_sprite)
+        return reward
+
+    def _build_shot_path(self, delta, hit, hit_sprite):
+        """Tiles a shot visibly travels through, in a straight line from the
+        player up to SHOOT_RANGE (stopping at a wall or the target it hit).
+        Used only by the renderer to animate the otherwise-instant shot."""
+        dr, dc = delta
+        r, c = self.player_pos
+        path = []
+        for _ in range(self.SHOOT_RANGE):
+            r += dr
+            c += dc
+            if self.grid[r, c] == WALL:
+                break
+            path.append([r, c])
+            if hit is not None and [r, c] == hit:
+                break
+        return {"path": path, "hit": hit, "hit_sprite": hit_sprite}
 
 
 
