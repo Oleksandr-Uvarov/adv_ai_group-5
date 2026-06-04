@@ -1,0 +1,31 @@
+What changed from the previous version:
+    (no previous machine-readable version to compare against)
+
+Developer comment: ...
+
+version recorded:
+obs_shape: (12, 10, 10)   grid_size: 10
+enemies: 2 melee, 1 guard   action_dim: 9
+reward coeffs: goal 0.1, enemy 0.05, kill 0.3, freeze 0.15
+
+training: total_timesteps=1000   n_envs=8
+duration: 0h 0m 40s   (started 2026-06-04 21:38:44, ended 2026-06-04 21:39:24)
+git: f3eae8eb7e (dirty)   recorded: 2026-06-04 21:40:49
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=0 (0.0%)   lost=9974 (99.7%)   truncated=26 (0.3%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
