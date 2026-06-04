@@ -17,7 +17,8 @@ class Renderer:
 
     def _load_sprites(self):
         self.sprites = {}
-        for name in ("floor", "wall", "player", "exit", "enemy", "freeze", "key", "guard", "fireball"):
+        for name in ("floor", "wall", "player", "exit", "enemy", "freeze", "key",
+                     "guard", "fireball", "warlock", "warlock_fireball"):
             img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
             self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
 
@@ -56,11 +57,14 @@ class Renderer:
                 self.screen.blit(self.sprites[name], (pos[1] * ts, pos[0] * ts))
 
         blit("exit", game.exit_pos)
-        blit("freeze", game.freeze_pos)
         blit("key", game.key_pos)
         for enemy_pos in game.melee_poses:
             blit("enemy", enemy_pos)
         blit("guard", game.guard_pos)
+        blit("warlock", game.warlock_pos)
+        # The warlock's in-flight fireball (distinct from the player's shot
+        # animation, which is passed in via the `fireball` argument).
+        blit("warlock_fireball", game.warlock_fireball_pos)
         if extra is not None:
             blit(extra[0], extra[1])
         blit("player", game.player_pos)

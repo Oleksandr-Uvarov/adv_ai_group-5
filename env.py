@@ -27,8 +27,8 @@ class GameEnv(gym.Env):
             dtype=np.float32
         )
 
-        # What the agent can do: 4 directions to go to and 4 directions to shoot to
-        self.action_space = spaces.Discrete(8)
+        # What the agent can do: 4 directions to go to, 4 directions to shoot into and, activate freeze powerup
+        self.action_space = spaces.Discrete(9)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -55,13 +55,16 @@ class GameEnv(gym.Env):
             for enemy_pos in g.melee_poses:
                 if enemy_pos is not None:
                     grid_display[enemy_pos[0]][enemy_pos[1]] = 'E'
-            grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
-            if g.freeze_pos is not None:
-                grid_display[g.freeze_pos[0]][g.freeze_pos[1]] = 'F'
+            if g.warlock_pos is not None:
+                grid_display[g.warlock_pos[0]][g.warlock_pos[1]] = 'W'
+            if g.warlock_fireball_pos is not None:
+                grid_display[g.warlock_fireball_pos[0]][g.warlock_fireball_pos[1]] = '*'
             if g.key_pos is not None:
                 grid_display[g.key_pos[0]][g.key_pos[1]] = 'K'
             if g.guard_pos is not None:
                 grid_display[g.guard_pos[0]][g.guard_pos[1]] = 'G'
+            # Drawn last so the player is never hidden under another glyph.
+            grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
             for row in grid_display:
                 print(' '.join(row))
             print()

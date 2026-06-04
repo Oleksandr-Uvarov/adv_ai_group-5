@@ -2,7 +2,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-DIRECTORY = "5_test"
+DIRECTORY = "6_warlock_active_freeze_hp"
 total_timesteps = 1000
 total_seconds = total_timesteps / 400
 hours = int(total_seconds // 3600)

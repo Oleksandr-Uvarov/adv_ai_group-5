@@ -63,7 +63,7 @@ def evaluate(model_path, pygame_overview=False, n_episodes=10000, grid_size=10):
 
 if __name__ == "__main__":
     results = evaluate(
-        "version_history/5_two_melee_enemies/zips/5_two_melee_enemies_ppo_3.zip",
-        pygame_overview=False,
+        "version_history/6_warlock_active_freeze_hp/zips/6_warlock_active_freeze_hp_ppo_1.zip",
+        pygame_overview=True,
     )
     print(results["n_won"], results["n_lost"], results["n_truncated"])
