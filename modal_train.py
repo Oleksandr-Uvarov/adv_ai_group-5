@@ -68,9 +68,15 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
     start_dt = datetime.now()
     model.learn(total_timesteps=total_timesteps, tb_log_name=model_name)
     end_dt = datetime.now()
-    model.save(str(zips_dir / f"{model_name}_{n}"))
+    model_path = str(zips_dir / f"{model_name}_{n}")
+    model.save(model_path)
     print("Training done.")
     env.close()
+
+    from evaluate import evaluate
+    print("Evaluating...")
+    eval_results = evaluate(model_path, pygame_overview=False)
+    print(f"Evaluation: won={eval_results['n_won']} lost={eval_results['n_lost']} truncated={eval_results['n_truncated']}")
 
     write_version_file(
         n, version_differences_dir,
@@ -85,6 +91,7 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
         started_at=start_dt.strftime("%Y-%m-%d %H:%M:%S"),
         ended_at=end_dt.strftime("%Y-%m-%d %H:%M:%S"),
         duration_seconds=(end_dt - start_dt).total_seconds(),
+        eval_results=eval_results,
     )
     volume.commit()
     print(f"Saved: {model_name}_{n}")

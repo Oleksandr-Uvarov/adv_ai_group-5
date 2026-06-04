@@ -5,3 +5,7 @@ modal run --detach modal_train.py --directory "4_key_and_guard" --timesteps 1000
 2. Starting attached
 
 modal run modal_train.py --directory "4_key_and_guard" --timesteps 1000000 --comment "increased batch size"
+
+
+tensorboard
+tensorboard --logdir tb_logs

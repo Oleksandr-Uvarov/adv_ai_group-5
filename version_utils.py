@@ -117,6 +117,16 @@ def _format_diff(prev_record, curr_record):
 # Human-readable rendering
 # --------------------------------------------------------------------------
 
+def _format_eval(ev):
+    if ev is None:
+        return "    (not evaluated)"
+    n = ev.get("n_episodes", 0)
+    won, lost, trunc = ev.get("n_won", 0), ev.get("n_lost", 0), ev.get("n_truncated", 0)
+    pct = lambda k: f"{k / n * 100:.1f}%" if n else "n/a"
+    return (f"    episodes={n}   won={won} ({pct(won)})   "
+            f"lost={lost} ({pct(lost)})   truncated={trunc} ({pct(trunc)})")
+
+
 def _format_txt(record, diff_block):
     env = record["env"]
     tr = record["training"]
@@ -151,6 +161,9 @@ def _format_txt(record, diff_block):
         f"git: {git_short}{dirty_str}   recorded: {record['recorded_at']}",
         f"libraries: {libs_str}",
         "",
+        "Evaluation:",
+        _format_eval(record.get("eval")),
+        "",
         "Parameters:",
         "",
         f"    features_dim (policy_kwargs): {tr['features_dim']}",
@@ -171,7 +184,8 @@ def write_version_file(n, version_differences_dir, *,
                        features_dim, ppo_policy, ppo_params,
                        total_timesteps, n_envs, signature,
                        developer_comment="", git_info=None,
-                       started_at=None, ended_at=None, duration_seconds=None):
+                       started_at=None, ended_at=None, duration_seconds=None,
+                       eval_results=None):
     """Write both a machine-readable ``version_{n}.json`` (source of truth) and a
     human-readable ``version_{n}.txt`` (changelog + snapshot) for a trained run.
 
@@ -200,6 +214,7 @@ def write_version_file(n, version_differences_dir, *,
             "ppo_params": dict(ppo_params),
         },
         "env": signature,
+        "eval": eval_results,
         "developer_comment": developer_comment,
     }
 
