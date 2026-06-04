@@ -2,7 +2,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-DIRECTORY = "6_warlock_active_freeze_hp"
+DIRECTORY = "7_spikes"
 total_timesteps = 1000
 total_seconds = total_timesteps / 400
 hours = int(total_seconds // 3600)
@@ -87,7 +87,7 @@ env.close()
 
 from evaluate import evaluate
 print("Evaluating...")
-eval_results = evaluate(model_path, pygame_overview=False)
+eval_results = evaluate(model_path, n_episodes=1000, pygame_overview=False)
 print(f"Evaluation: won={eval_results['n_won']} lost={eval_results['n_lost']} truncated={eval_results['n_truncated']}")
 
 version_file = write_version_file(

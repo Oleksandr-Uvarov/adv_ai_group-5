@@ -24,9 +24,11 @@ class Game:
     GUARD_DAMAGE = 50
     WARLOCK_DAMAGE = 50
     WARLOCK_FIREBALL_RANGE = 3
+    SPIKE_DAMAGE = 34
 
     FREEZE_TICKS = 2
     SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
+    N_SPIKES = 3
 
     @classmethod
     def reward_coeffs(cls):
@@ -46,7 +48,9 @@ class Game:
             "enemy_damage": cls.MELEE_ENEMY_DAMAGE,
             "guard_damage": cls.GUARD_DAMAGE,
             "warlock_damage": cls.WARLOCK_DAMAGE,
-            "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE
+            "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE,
+            "n_spikes": cls.N_SPIKES,
+            "spike_damage": cls.SPIKE_DAMAGE
         }
 
     def __init__(self, grid_size=10):
@@ -74,12 +78,15 @@ class Game:
                     if random.random() < 0.2:
                         self.grid[r, c] = WALL
 
-            # place remaining stuff on remaining empty (floor) cells
+            # place remaining stuff on remaining empty (floor) cells. We need one
+            # cell each for the 6 fixed entities (player, exit, key, two melee
+            # enemies, warlock) plus one per spike.
             floor_cells = self._floor_cells()
-            if len(floor_cells) < 6:
+            n_sampled = 6 + self.N_SPIKES
+            if len(floor_cells) < n_sampled:
                 continue
 
-            positions = random.sample(floor_cells, 6)
+            positions = random.sample(floor_cells, n_sampled)
             self.player_pos = list(positions[0])
             self.exit_pos   = list(positions[1])
             self.freeze_available = True
@@ -92,6 +99,10 @@ class Game:
             self.warlock_fireball_pos = None
             self.warlock_fireball_dir = None
             self.warlock_fireball_ticks = 0
+            # Stored as lists (not the sampled tuples) so == comparisons with
+            # player_pos work: tuple == list is always False in Python.
+            self.spike_poses = [list(positions[6 + i]) for i in range(self.N_SPIKES)]
+            self.spike_statuses = [False] * self.N_SPIKES
 
             self.freeze_ticks = 0
             self.has_key = False
@@ -248,6 +259,14 @@ class Game:
 
         return reward, terminated
 
+    def _check_for_spikes(self):
+        reward, terminated = 0, False
+        for i in range(self.N_SPIKES):
+            if self.spike_statuses[i] and self.spike_poses[i] == self.player_pos:
+                reward, terminated = self._damage_player(self.SPIKE_DAMAGE)
+
+        return reward, terminated
+
     def _damage_player(self, damage):
         terminated = False
         self.hp -= damage
@@ -271,34 +290,52 @@ class Game:
         if self.done:
             raise RuntimeError("Episode is over. Call reset().")
 
+        reward = 0
         terminated = False
         truncated = False
         # Cleared each step; only a shoot action repopulates it (for rendering).
         self.last_shot = None
-        
+
+        # Exactly one spike is active this step (chosen here).
+        self._spikes()
+        pos_before = list(self.player_pos)
+
+        # Spike check #1: the player is on the spike as it triggers. This covers
+        # staying put on a spike that fires, and being caught while stepping off
+        # it the same step.
+        spike_reward, terminated = self._check_for_spikes()
+        reward += spike_reward
 
         # Distance to the nearest enemy *before* the player acts, so the
         # enemy-proximity shaping can actually credit the player's own move.
         # Only movement actions are shaped this way; shooting is rewarded by
         # the kill bonus in _shoot instead.
         old_enemy_dist = self._nearest_enemy_distance() if action < 4 else None
-        
-        if action == 8:
-            if self.freeze_available:
-                reward = self.REWARD_FREEZE
-                self._activate_freeze_powerup()
+
+        # A lethal spike at the start of the step skips the player's action.
+        if not terminated:
+            if action == 8:
+                if self.freeze_available:
+                    reward += self.REWARD_FREEZE
+                    self._activate_freeze_powerup()
+                # Freezing while the warlock is still alive provokes it: the
+                # warlock damages the player. This is the intended cost of using
+                # freeze before the warlock has been dealt with.
+                if self.warlock_pos is not None:
+                    hit_reward, terminated = self._damage_player(self.WARLOCK_DAMAGE)
+                    reward += hit_reward
+            elif action < 4:
+                move_reward, terminated = self._move_agent(action, terminated)
+                reward += move_reward
             else:
-                reward = 0
-            # Freezing while the warlock is still alive provokes it: the warlock
-            # damages the player. This is the intended cost of using freeze
-            # before the warlock has been dealt with.
-            if self.warlock_pos is not None:
-                hit_reward, terminated = self._damage_player(self.WARLOCK_DAMAGE)
-                reward += hit_reward
-        elif action < 4:
-            reward, terminated = self._move_agent(action, terminated)
-        else:
-            reward = self._shoot(action)
+                reward += self._shoot(action)
+
+            # Spike check #2: the player moved onto an active spike this step.
+            # Gated on an actual tile change so a player who stayed put is never
+            # charged twice for the same tile (check #1 already covered it).
+            if not terminated and self.player_pos != pos_before:
+                spike_reward, terminated = self._check_for_spikes()
+                reward += spike_reward
 
         # Enemies (melee + warlock) act after the player, unless frozen. The
         # freeze tick is consumed here so it gates every enemy the same way.
@@ -545,6 +582,13 @@ class Game:
             dist = dist / max_d
         return dist
 
+    def _spikes(self):
+        # randint is inclusive on both ends, so the range is [0, N_SPIKES - 1].
+        spike_n = random.randint(0, self.N_SPIKES - 1)
+        for i in range(self.N_SPIKES):
+            self.spike_statuses[i] = (i == spike_n)
+
+
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
         # creating grids filled with zeros
@@ -567,6 +611,7 @@ class Game:
         # agent can actually observe how much damage it can still take, the same
         # way freeze_status exposes the freeze timer.
         hp = np.full((self.grid_size, self.grid_size), self.hp / self.MAX_HP, dtype=np.float32)
+        spikes = np.zeros_like(self.grid, dtype=np.float32)
 
 
         # setting every object's position to 1 in the respective grid
@@ -585,12 +630,17 @@ class Game:
             warlock[self.warlock_pos[0], self.warlock_pos[1]] = 1.0
         if self.warlock_fireball_pos is not None:
             warlock_fireball[self.warlock_fireball_pos[0], self.warlock_fireball_pos[1]] = 1.0
+        for i in range(len(self.spike_poses)):
+            if self.spike_statuses[i]:
+                spikes[self.spike_poses[i][0], self.spike_poses[i][1]] = 1.0
+            else:
+                spikes[self.spike_poses[i][0], self.spike_poses[i][1]] = 0.5
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 
         return np.stack([walls, player, exit_, freeze,
                          freeze_status, self._distance_map(goal), key,
-                         guard, melee, warlock, warlock_fireball, hp],
+                         guard, melee, warlock, warlock_fireball, hp, spikes],
                         axis=0)
 
 

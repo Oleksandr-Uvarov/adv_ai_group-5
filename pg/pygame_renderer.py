@@ -4,7 +4,9 @@ from pathlib import Path
 _SPRITES_DIR = Path(__file__).parent / "sprites"
 
 class Renderer:
-    TILE_SIZE = 32
+    # Sprites are 32x32 but get scaled to TILE_SIZE on load, so this is the only
+    # knob needed to change the on-screen size of everything.
+    TILE_SIZE = 64
     SHOT_FRAME_MS = 60  # delay between projectile animation frames
 
     def __init__(self, grid_size=10):
@@ -18,7 +20,8 @@ class Renderer:
     def _load_sprites(self):
         self.sprites = {}
         for name in ("floor", "wall", "player", "exit", "enemy", "freeze", "key",
-                     "guard", "fireball", "warlock", "warlock_fireball"):
+                     "guard", "fireball", "warlock", "warlock_fireball", "activated_spikes",
+                     "deactivated_spikes"):
             img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
             self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
 
@@ -55,6 +58,12 @@ class Renderer:
         def blit(name, pos):
             if pos is not None:
                 self.screen.blit(self.sprites[name], (pos[1] * ts, pos[0] * ts))
+
+        # Spikes are floor hazards, so draw them first (under the entities) — one
+        # is active per step, the rest show as deactivated.
+        for i in range(len(game.spike_poses)):
+            name = "activated_spikes" if game.spike_statuses[i] else "deactivated_spikes"
+            blit(name, game.spike_poses[i])
 
         blit("exit", game.exit_pos)
         blit("key", game.key_pos)
