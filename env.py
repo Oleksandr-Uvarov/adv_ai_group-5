@@ -51,6 +51,11 @@ class GameEnv(gym.Env):
         else:
             g = self.game
             grid_display = [['#' if g.grid[r, c] == 1 else '.' for c in range(g.grid_size)] for r in range(g.grid_size)]
+            # Spikes are floor hazards drawn first so entities sit on top of them.
+            # Active (firing) this step is 'S', dormant is 's'.
+            for i in range(len(g.spike_poses)):
+                sp = g.spike_poses[i]
+                grid_display[sp[0]][sp[1]] = 'S' if g.spike_statuses[i] else 's'
             grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
             for enemy_pos in g.melee_poses:
                 if enemy_pos is not None:

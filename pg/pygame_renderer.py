@@ -19,9 +19,8 @@ class Renderer:
 
     def _load_sprites(self):
         self.sprites = {}
-        for name in ("floor", "wall", "player", "exit", "enemy", "freeze", "key",
-                     "guard", "fireball", "warlock", "warlock_fireball", "activated_spikes",
-                     "deactivated_spikes"):
+        for name in ("floor", "wall", "player", "exit", "enemy", "key",
+                     "guard", "fireball", "warlock", "warlock_fireball", "activated_spikes"):
             img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
             self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
 

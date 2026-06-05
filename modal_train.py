@@ -4,7 +4,7 @@ from pathlib import Path
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("stable-baselines3[extra]", "torch", "numpy")
-    .add_local_python_source("env", "game_engine", "smallgridcnn", "version_utils")
+    .add_local_python_source("env", "game_engine", "smallgridcnn", "version_utils", "evaluate")
 )
 
 app = modal.App("rl-training", image=image)

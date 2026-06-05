@@ -1,0 +1,31 @@
+What changed from the previous version:
+    (no previous machine-readable version to compare against)
+
+Developer comment: make sure the warlock is now always next to the exit. make sure the warlock only shoots whenever the agent is in range (because it seems like the agent is otherwise too afraid to come in line of the fireball of the warlock). make sure guard/warlock/spikes never overlap.
+
+version recorded:
+obs_shape: (13, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 1  action_dim: 9
+reward coeffs: goal 0.1, enemy 0.05, kill 0.3, freeze 0.15
+
+training: total_timesteps=15000000   n_envs=8
+duration: 7h 6m 59s   (started 2026-06-04 23:32:10, ended 2026-06-05 06:39:08)
+git: b2f146291d   recorded: 2026-06-05 06:45:11
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=5549 (55.5%)   lost=1497 (15.0%)   truncated=2954 (29.5%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42

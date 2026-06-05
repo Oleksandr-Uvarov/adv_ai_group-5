@@ -60,7 +60,9 @@ def env_signature(env):
         "obs_shape": list(env.observation_space.shape),
         "grid_size": game.grid_size,
         "n_melee": sum(1 for m in game.melee_poses if m is not None),
+        "n_melee_total": game.TOTAL_MELEE_ENEMIES,
         "n_guard": int(game.guard_pos is not None),
+        "n_warlock": int(game.warlock_pos is not None),
         "action_dim": int(env.action_space.n),
         "reward_coeffs": Game.reward_coeffs(),
     }
@@ -151,9 +153,9 @@ def _format_txt(record, diff_block):
         "",
         "version recorded:",
         f"obs_shape: {tuple(env['obs_shape'])}   grid_size: {env['grid_size']}",
-        f"enemies: {env['n_melee']} melee, {env['n_guard']} guard   action_dim: {env['action_dim']}",
-        f"reward coeffs: goal {rc['goal_step']}, enemy {rc['enemy_step']}, "
-        f"kill {rc['kill']}, freeze {rc['freeze']}",
+        f"enemies: {env['n_melee']} melee, {env['n_guard']}, warlock {env['n_warlock']}  action_dim: {env['action_dim']}",
+        f"reward coeffs: goal {rc['goal_step']}, kill {rc['kill']}, "
+        f"freeze {rc['freeze']}, all_cleared {rc['all_cleared']}",
         "",
         f"training: total_timesteps={tr['total_timesteps']}   n_envs={tr['n_envs']}",
         f"duration: {timing.get('duration', 'unknown')}   "

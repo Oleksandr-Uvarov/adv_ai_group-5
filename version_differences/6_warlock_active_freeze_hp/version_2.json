@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "recorded_at": "2026-06-04 21:40:49",
+  "timing": {
+    "started_at": "2026-06-04 21:38:44",
+    "ended_at": "2026-06-04 21:39:24",
+    "duration_seconds": 40.267606,
+    "duration": "0h 0m 40s"
+  },
+  "git": {
+    "commit": "f3eae8eb7ea8a242d62e8efa9f73427a97d1a957",
+    "dirty": true
+  },
+  "libraries": {
+    "stable_baselines3": "2.8.0",
+    "torch": "2.12.0+cu130",
+    "gymnasium": "1.2.3",
+    "numpy": "2.4.6"
+  },
+  "training": {
+    "total_timesteps": 1000,
+    "n_envs": 8,
+    "features_dim": 128,
+    "policy": "CnnPolicy",
+    "ppo_params": {
+      "n_steps": 2048,
+      "batch_size": 256,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "verbose": 1,
+      "seed": 42
+    }
+  },
+  "env": {
+    "obs_shape": [
+      12,
+      10,
+      10
+    ],
+    "grid_size": 10,
+    "n_melee": 2,
+    "n_guard": 1,
+    "action_dim": 9,
+    "reward_coeffs": {
+      "goal_step": 0.1,
+      "enemy_step": 0.05,
+      "kill": 0.3,
+      "key": 0.3,
+      "freeze": 0.15,
+      "win": 1.0,
+      "lose": -1.0,
+      "hit": -0.3,
+      "shoot_range": 3,
+      "freeze_ticks": 2,
+      "hp": 100,
+      "enemy_damage": 50,
+      "guard_damage": 50,
+      "warlock_damage": 50,
+      "warlock_fireball_range": 3
+    }
+  },
+  "eval": {
+    "n_episodes": 10000,
+    "n_won": 0,
+    "n_lost": 9974,
+    "n_truncated": 26
+  },
+  "developer_comment": "..."
+}
