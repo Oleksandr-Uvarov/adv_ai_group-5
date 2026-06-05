@@ -20,27 +20,34 @@ class Game(EnemyMixin):
     REWARD_GOAL_STEP = 0.1    # per-tile progress toward the current goal
     REWARD_KILL = 0.3         # shooting an enemy (melee, guard or warlock)
     REWARD_KEY = 0.3          # picking up the key
-    REWARD_FREEZE = 0.3       # using the freeze power-up safely (warlock dead)
-    REWARD_ALL_CLEARED = 0.5  # one-time: every enemy defeated, the exit opens
-    REWARD_WIN = 1.0          # reaching the exit holding the key (+ speed bonus)
+    REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
+    REWARD_ALL_CLEARED = 0.5  # one-time per level: every enemy defeated, exit opens
+    REWARD_POTION = 0.3       # picking up a potion (scaled by HP actually restored)
+    REWARD_LEVEL_CLEAR = 1.0  # clearing a non-final level, then dropping into the next
+    REWARD_WIN = 2.0          # clearing the final level - the whole run is complete
     REWARD_LOSE = -1.0        # killed (HP hits 0), or grabbing the key past the guard
     REWARD_HIT = -0.3         # taking non-lethal damage from an enemy
 
     MAX_HP = 100
+    POTION_HEAL = 50
     MELEE_ENEMY_DAMAGE = 50
     GUARD_DAMAGE = 50
     WARLOCK_DAMAGE = 50
     WARLOCK_FIREBALL_RANGE = 3
     SPIKE_DAMAGE = 34
 
-    FREEZE_TICKS = 2
+    FREEZE_TICKS = 2          # how long a single freeze lasts
+    FREEZE_CHARGES = 2        # freezes available per run (NOT refilled between levels)
     SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
     N_SPIKES = 3
-    # The player faces TOTAL_MELEE_ENEMIES melee enemies over an episode, but only
-    # MAX_ACTIVE_MELEE are ever on the board at once: kill one and another walks in
-    # from the reserve until all TOTAL_MELEE_ENEMIES have been defeated.
-    TOTAL_MELEE_ENEMIES = 6
-    MAX_ACTIVE_MELEE = 3
+
+    # Roguelike levels played back-to-back inside one episode, as
+    # (total_melee, max_active_melee) pairs: of `total_melee` enemies only
+    # `max_active_melee` are on the board at once, the rest spawn in as they die.
+    # HP and freeze charges carry across levels; clearing the last level wins the
+    # run. The warlock/guard (one each) are unchanged per level.
+    LEVELS = [(4, 2), (5, 2), (7, 3)]
+    N_LEVELS = len(LEVELS)
 
     @classmethod
     def reward_coeffs(cls):
@@ -51,20 +58,24 @@ class Game(EnemyMixin):
             "key": cls.REWARD_KEY,
             "freeze": cls.REWARD_FREEZE,
             "all_cleared": cls.REWARD_ALL_CLEARED,
+            "potion": cls.REWARD_POTION,
+            "level_clear": cls.REWARD_LEVEL_CLEAR,
             "win": cls.REWARD_WIN,
             "lose": cls.REWARD_LOSE,
             "hit": cls.REWARD_HIT,
             "shoot_range": cls.SHOOT_RANGE,
             "freeze_ticks": cls.FREEZE_TICKS,
+            "freeze_charges": cls.FREEZE_CHARGES,
             "hp": cls.MAX_HP,
+            "potion_heal": cls.POTION_HEAL,
             "enemy_damage": cls.MELEE_ENEMY_DAMAGE,
             "guard_damage": cls.GUARD_DAMAGE,
             "warlock_damage": cls.WARLOCK_DAMAGE,
             "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE,
             "n_spikes": cls.N_SPIKES,
             "spike_damage": cls.SPIKE_DAMAGE,
-            "total_melee_enemies": cls.TOTAL_MELEE_ENEMIES,
-            "max_active_melee": cls.MAX_ACTIVE_MELEE
+            "n_levels": cls.N_LEVELS,
+            "levels": [list(lvl) for lvl in cls.LEVELS]
         }
 
     def __init__(self, grid_size=10):
@@ -74,7 +85,25 @@ class Game(EnemyMixin):
         self.step_limit = 100
 
     def reset(self):
-        """Reset to a fresh episode. Returns the initial state."""
+        """Start a fresh run at the first level. HP and freeze charges are set
+        here and then carried across levels - _setup_level rebuilds the map and
+        entities for each level but deliberately leaves these run-wide stats (and
+        the level index / won flag) untouched. Returns the initial state."""
+        self.level = 0
+        self.hp = self.MAX_HP
+        self.freeze_charges = self.FREEZE_CHARGES
+        self.won = False
+        self.done = False
+        self._setup_level()
+        return self._get_state()
+
+    def _setup_level(self):
+        """Generate the map and entities for the current level. Per-level enemy
+        counts come from LEVELS; a healing potion appears on every level after the
+        first (the player arrives there with carried-over HP). HP, freeze charges,
+        the level index and the won/done flags are NOT reset here so they persist
+        across levels."""
+        total_melee, self.max_active_melee = self.LEVELS[self.level]
         # Simple map: walls on border, floor inside
         while True:
             # Initializing an empty grid
@@ -93,12 +122,12 @@ class Game(EnemyMixin):
                         self.grid[r, c] = WALL
 
             # Directly sample the cells for the player, exit, key, warlock and the
-            # MAX_ACTIVE_MELEE melee enemies on the board at the start, then seat
-            # the guard next to the key and drop the spikes on the remaining
-            # floor. Every later placement avoids the cells already taken, so no
-            # two entities ever share a tile. We need those sampled cells plus one
+            # max-active melee enemies on the board at the start, then seat the
+            # guard next to the key and drop the spikes on the remaining floor.
+            # Every later placement avoids the cells already taken, so no two
+            # entities ever share a tile. We need those sampled cells plus one
             # free cell per spike.
-            n_sampled = 4 + self.MAX_ACTIVE_MELEE  # player, exit, key, warlock + melee
+            n_sampled = 4 + self.max_active_melee  # player, exit, key, warlock + melee
             cells = floor_cells(self.grid)
             if len(cells) < n_sampled + self.N_SPIKES:
                 continue
@@ -111,10 +140,9 @@ class Game(EnemyMixin):
             self.melee_poses = [list(p) for p in positions[4:]]
             # The remaining enemies wait off-board and spawn in as the active ones
             # are killed (see EnemyMixin._respawn_melee).
-            self.melee_reserve = self.TOTAL_MELEE_ENEMIES - self.MAX_ACTIVE_MELEE
+            self.melee_reserve = total_melee - self.max_active_melee
             occupied = set(positions)
 
-            self.freeze_available = True
             # The guard is anchored next to the key (the objective it protects),
             # skipping any neighbour already occupied; it comes back None if every
             # free side is walled in or taken (handled by the reachability check
@@ -139,13 +167,30 @@ class Game(EnemyMixin):
                 continue
             self.spike_poses = [list(cell) for cell in random.sample(free, self.N_SPIKES)]
             self.spike_statuses = [True] * self.N_SPIKES
+            occupied.update(tuple(s) for s in self.spike_poses)
 
+            # A potion appears on every level past the first; it just needs to be
+            # reachable (it is optional and never blocks a path). On the first
+            # level there is none, but the observation channel still exists (zeros)
+            # so the observation shape never changes between levels.
+            self.potion_pos = None
+            if self.level >= 1:
+                potion_cells = [cell for cell in cells
+                                if cell not in occupied
+                                and is_reachable(self.grid, self.player_pos, cell)]
+                if not potion_cells:
+                    continue
+                self.potion_pos = list(random.choice(potion_cells))
+                occupied.add(tuple(self.potion_pos))
+
+            # Level-local state (reset every level, unlike HP / freeze charges).
             self.freeze_ticks = 0
             self.has_key = False
-            self.won = False
-            # Tracks whether the one-time "all enemies cleared" bonus has been paid.
             self.enemies_cleared_awarded = False
-            self.hp = self.MAX_HP
+            self.steps = 0
+            # Straight-line path of the most recent shot, for rendering only. Set
+            # by _shoot, cleared every step. Not part of the observation.
+            self.last_shot = None
 
             melee_valid = all(
                 is_reachable(self.grid, self.player_pos, pos)
@@ -176,13 +221,6 @@ class Game(EnemyMixin):
                     and bfs_distance(self.grid, self.player_pos, self.exit_pos) >= 4):
                 break
 
-        self.done = False
-        self.steps = 0
-        # Straight-line path of the most recent shot, for rendering only. Set by
-        # _shoot, cleared every step. Has no effect on the agent's observation.
-        self.last_shot = None
-        return self._get_state()
-
     def _move_agent(self, action, terminated):
         if self.has_key:
             goal_pos = self.exit_pos
@@ -205,6 +243,16 @@ class Game(EnemyMixin):
         # if old exit distance is greater than new exit distance,
         # then reward is positive.
         reward = (old_goal_dist - new_goal_dist) * self.REWARD_GOAL_STEP
+
+        # Potion pickup: heal up to MAX_HP. The reward is scaled by the HP
+        # actually restored, so grabbing a potion at (or near) full health is
+        # worth almost nothing - the agent only detours for it when it is hurt,
+        # which is the behaviour we want now that HP carries between levels.
+        if self.potion_pos is not None and self.player_pos == self.potion_pos:
+            healed = min(self.MAX_HP, self.hp + self.POTION_HEAL) - self.hp
+            self.hp += healed
+            self.potion_pos = None
+            reward += self.REWARD_POTION * (healed / self.POTION_HEAL)
 
         if self.key_pos and self.player_pos == self.key_pos:
             if self.guard_pos is not None:
@@ -267,7 +315,7 @@ class Game(EnemyMixin):
         # A lethal spike at the start of the step skips the player's action.
         if not terminated:
             if action == 8:
-                if self.freeze_available:
+                if self.freeze_charges > 0:
                     self._activate_freeze_powerup()
                     if self.warlock_pos is not None:
                         # Using freeze while the warlock still lives provokes it:
@@ -317,17 +365,25 @@ class Game(EnemyMixin):
                 self.enemies_cleared_awarded = True
 
         # The exit only opens once every enemy is gone. Reaching it with the key
-        # wins only when no enemy remains and the reserve is empty. Checked here,
-        # after combat, so killing the final enemy while already standing on the
-        # exit still counts as a win this step.
+        # clears the level only when no enemy remains and the reserve is empty.
+        # Checked here, after combat, so killing the final enemy while already
+        # standing on the exit still counts this step. Clearing a non-final level
+        # drops the player straight into the next one (HP and freeze charges carry
+        # over, the step budget resets in _setup_level) without ending the
+        # episode; clearing the final level wins the run.
         if (not terminated and self.has_key
                 and self.player_pos == self.exit_pos
                 and self._all_enemies_defeated()):
             speed_bonus = max(0.0, (50 - self.steps) / 50)
-            reward += self.REWARD_WIN + speed_bonus
-            terminated = True
-            self.won = True
-            self.done = True
+            if self.level < self.N_LEVELS - 1:
+                reward += self.REWARD_LEVEL_CLEAR + speed_bonus
+                self.level += 1
+                self._setup_level()
+            else:
+                reward += self.REWARD_WIN + speed_bonus
+                terminated = True
+                self.won = True
+                self.done = True
 
         self.steps += 1
         if self.steps >= self.step_limit and not terminated:  # step limit
@@ -338,7 +394,7 @@ class Game(EnemyMixin):
 
     def _activate_freeze_powerup(self):
         self.freeze_ticks = self.FREEZE_TICKS
-        self.freeze_available  = False
+        self.freeze_charges -= 1
 
     def _get_closest_unidirectional_enemy(self, enemies, direction):
         shortest_distance = 100000
@@ -415,7 +471,11 @@ class Game(EnemyMixin):
         walls = (self.grid == WALL).astype(np.float32)
         player = (np.zeros_like(self.grid, dtype=np.float32))
         exit_ = (np.zeros_like(self.grid, dtype=np.float32))
-        freeze = (np.zeros_like(self.grid, dtype=np.float32))
+        # Constant plane carrying how many freeze charges are left (normalized).
+        # Charges persist across levels and are not refilled, so this slowly
+        # ticks down over a run; 1.0 = full, 0.0 = none left.
+        freeze = np.full((self.grid_size, self.grid_size),
+                         self.freeze_charges / self.FREEZE_CHARGES, dtype=np.float32)
         # separate channel where every tile has the same value -
         # how many ticks of freeze status are left (normalized)
         freeze_status = (np.full((self.grid_size, self.grid_size), self.freeze_ticks / self.FREEZE_TICKS, dtype=np.float32))
@@ -432,14 +492,15 @@ class Game(EnemyMixin):
         # way freeze_status exposes the freeze timer.
         hp = np.full((self.grid_size, self.grid_size), self.hp / self.MAX_HP, dtype=np.float32)
         spikes = np.zeros_like(self.grid, dtype=np.float32)
+        # Potion channel: always present (zeros when there is no potion, e.g. the
+        # first level) so the observation shape is identical on every level.
+        potion = np.zeros_like(self.grid, dtype=np.float32)
 
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
         # The exit reads 1.0 once it is open (every enemy cleared) and 0.5 while it
         # is still locked, so the agent can see when finishing is actually possible.
         exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0 if self._all_enemies_defeated() else 0.5
-        if self.freeze_available:
-            freeze = (np.full((self.grid_size, self.grid_size), 1, dtype=np.float32))
         if self.key_pos is not None:
             key[self.key_pos[0], self.key_pos[1]] = 1.0
         if self.guard_pos is not None:
@@ -456,10 +517,12 @@ class Game(EnemyMixin):
         # Spikes are always-on hazards now, so every spike tile reads 1.0.
         for spike_pos in self.spike_poses:
             spikes[spike_pos[0], spike_pos[1]] = 1.0
+        if self.potion_pos is not None:
+            potion[self.potion_pos[0], self.potion_pos[1]] = 1.0
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 
         return np.stack([walls, player, exit_, freeze,
                          freeze_status, distance_map(self.grid, goal), key,
-                         guard, melee, warlock, warlock_fireball, hp, spikes],
+                         guard, melee, warlock, warlock_fireball, hp, spikes, potion],
                         axis=0)

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-DIRECTORY = "7_spikes"
+DIRECTORY = "9_levels_and_potion"
 total_timesteps = 1000
 total_seconds = total_timesteps / 400
 hours = int(total_seconds // 3600)

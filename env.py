@@ -56,6 +56,8 @@ class GameEnv(gym.Env):
             for i in range(len(g.spike_poses)):
                 sp = g.spike_poses[i]
                 grid_display[sp[0]][sp[1]] = 'S' if g.spike_statuses[i] else 's'
+            if g.potion_pos is not None:
+                grid_display[g.potion_pos[0]][g.potion_pos[1]] = 'P'
             grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
             for enemy_pos in g.melee_poses:
                 if enemy_pos is not None:

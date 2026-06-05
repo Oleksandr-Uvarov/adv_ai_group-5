@@ -20,7 +20,8 @@ class Renderer:
     def _load_sprites(self):
         self.sprites = {}
         for name in ("floor", "wall", "player", "exit", "enemy", "key",
-                     "guard", "fireball", "warlock", "warlock_fireball", "activated_spikes"):
+                     "guard", "fireball", "warlock", "warlock_fireball",
+                     "activated_spikes", "potion"):
             img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
             self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
 
@@ -58,11 +59,11 @@ class Renderer:
             if pos is not None:
                 self.screen.blit(self.sprites[name], (pos[1] * ts, pos[0] * ts))
 
-        # Spikes are floor hazards, so draw them first (under the entities) — one
-        # is active per step, the rest show as deactivated.
-        for i in range(len(game.spike_poses)):
-            name = "activated_spikes" if game.spike_statuses[i] else "deactivated_spikes"
-            blit(name, game.spike_poses[i])
+        # Spikes are always-on floor hazards, drawn first so entities sit on top.
+        for spike_pos in game.spike_poses:
+            blit("activated_spikes", spike_pos)
+        # The potion is a floor pickup; draw it under the entities too.
+        blit("potion", getattr(game, "potion_pos", None))
 
         blit("exit", game.exit_pos)
         blit("key", game.key_pos)

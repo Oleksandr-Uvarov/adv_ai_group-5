@@ -61,7 +61,9 @@ def evaluate(model_path, n_episodes=10000, pygame_overview=False, grid_size=10):
     for _ in range(n_episodes):
         obs, _ = env.reset()
         result = "truncated"
-        for _ in range(env.game.step_limit):
+        # An episode now spans up to N_LEVELS levels, each with its own step
+        # budget, so allow that many steps before giving up on the episode.
+        for _ in range(env.game.step_limit * env.game.N_LEVELS):
             action, _ = model.predict(obs, deterministic=True)
             obs, _, done, truncated, _ = env.step(action)
             if done or truncated:
@@ -94,7 +96,9 @@ def record_episodes(model, env, n_episodes):
         frames = [copy.deepcopy(env.game)]
         result = "truncated"
 
-        for _ in range(env.game.step_limit):
+        # An episode now spans up to N_LEVELS levels, each with its own step
+        # budget, so allow that many steps before giving up on the episode.
+        for _ in range(env.game.step_limit * env.game.N_LEVELS):
             action, _ = model.predict(obs, deterministic=True)
             obs, _, done, truncated, _ = env.step(action)
             env.game.last_action = int(action)
@@ -238,17 +242,22 @@ def watch_episodes(episodes, category, grid_size):
                 (m + 230, top + 8),
             )
 
-            # Freeze indicator: grey until spent, then red.
-            if game.freeze_available:
-                ftext, fcolor = "freeze not used", (200, 200, 200)
+            # Freeze charges remaining (persist across levels); red once empty.
+            charges = getattr(game, "freeze_charges", 0)
+            if charges > 0:
+                ftext, fcolor = f"Freeze x{charges}", (200, 200, 200)
             else:
-                ftext, fcolor = "FREEZE USED", (235, 70, 70)
+                ftext, fcolor = "Freeze: none", (235, 70, 70)
             self.screen.blit(self.small_font.render(ftext, True, fcolor), (m + 230, top + 36))
 
-            # Episode label + frame counter on the right.
+            # Episode label on the right, with the level + frame counter below it.
             lab = self.small_font.render(self.ep_label, True, (230, 230, 230))
             self.screen.blit(lab, (self.width - lab.get_width() - m, top + 6))
-            fc = self.small_font.render(f"Frame {frame_idx + 1}/{n_frames}", True, (200, 200, 200))
+            lvl = getattr(game, "level", 0)
+            n_levels = getattr(game, "N_LEVELS", 1)
+            fc = self.small_font.render(
+                f"Level {lvl + 1}/{n_levels}   Frame {frame_idx + 1}/{n_frames}",
+                True, (200, 200, 200))
             self.screen.blit(fc, (self.width - fc.get_width() - m, top + 28))
 
         def _draw_buttons(self, playing):
@@ -395,4 +404,4 @@ def main(model_path, n_episodes=30, grid_size=10):
 
 
 if __name__ == "__main__":
-    main("version_history/7_spikes/zips/7_spikes_ppo_1.zip", n_episodes=30)
+    main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_1_20260605-182758-2c400e.zip", n_episodes=30)

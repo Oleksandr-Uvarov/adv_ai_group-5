@@ -21,8 +21,8 @@ class EnemyMixin:
     # ------------------------------------------------------------------ shared
     def _occupied_cells(self):
         """Set of ``(row, col)`` tuples currently holding an entity (player, exit,
-        key, guard, warlock, any living melee enemy, any spike). Used to keep the
-        warlock and freshly spawned enemies from landing on top of anything."""
+        key, guard, warlock, any living melee enemy, any spike, the potion). Used
+        to keep the warlock and freshly spawned enemies from landing on anything."""
         cells = {tuple(self.player_pos), tuple(self.exit_pos)}
         if self.key_pos is not None:
             cells.add(tuple(self.key_pos))
@@ -30,6 +30,8 @@ class EnemyMixin:
             cells.add(tuple(self.guard_pos))
         if self.warlock_pos is not None:
             cells.add(tuple(self.warlock_pos))
+        if self.potion_pos is not None:
+            cells.add(tuple(self.potion_pos))
         for m in self.melee_poses:
             if m is not None:
                 cells.add(tuple(m))
@@ -98,9 +100,9 @@ class EnemyMixin:
 
     def _respawn_melee(self):
         """Refill empty melee slots from the reserve so a new enemy walks in to
-        replace each one the player kills, until all TOTAL_MELEE_ENEMIES have
-        appeared. New enemies spawn on a reachable floor cell well away from the
-        player so they never pop into existence right on top of it."""
+        replace each one the player kills, until the level's reserve is exhausted.
+        New enemies spawn on a reachable floor cell well away from the player so
+        they never pop into existence right on top of it."""
         for i in range(len(self.melee_poses)):
             if self.melee_poses[i] is None and self.melee_reserve > 0:
                 cell = self._spawn_melee_cell()
