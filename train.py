@@ -1,4 +1,5 @@
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -45,8 +46,11 @@ version_differences_dir = Path("version_differences") / DIRECTORY
 for d in (version_dir, zips_dir, tb_dir, version_differences_dir):
     d.mkdir(parents=True, exist_ok=True)
 
-n = len(list(zips_dir.iterdir())) + 1
 model_name = f"{DIRECTORY}_ppo"
+# Unique per-run tag so concurrent runs never collide on any artifact (zip,
+# tb_logs, version files) even if they land on the same sequential n. Timestamp
+# for readability + a short random part to break same-second ties.
+run_tag = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 GRID_SIZE = 10
 N_ENVS = 8
@@ -78,9 +82,13 @@ model = PPO(PPO_POLICY,
             )
 
 start_dt = datetime.now()
-model.learn(total_timesteps=total_timesteps, tb_log_name=model_name)
+model.learn(total_timesteps=total_timesteps, tb_log_name=f"{model_name}_{run_tag}")
 end_dt = datetime.now()
-model_path = str(zips_dir / f"{model_name}_{n}")
+# Pick the version number now, not at launch, so two runs into the same directory
+# don't both grab the same n and overwrite each other: by save time the earlier
+# run's zip already exists on disk, so we take the next free slot.
+n = len(list(zips_dir.iterdir())) + 1
+model_path = str(zips_dir / f"{model_name}_{n}_{run_tag}")
 model.save(model_path)
 print("Training done.")
 env.close()
@@ -103,5 +111,6 @@ version_file = write_version_file(
     ended_at=end_dt.strftime("%Y-%m-%d %H:%M:%S"),
     duration_seconds=(end_dt - start_dt).total_seconds(),
     eval_results=eval_results,
+    run_tag=run_tag,
 )
 print(f"Version differences saved to {version_file}")

@@ -84,13 +84,23 @@ def _flatten(d, prefix=""):
 
 
 def _load_prev_record(version_differences_dir, n):
-    prev = Path(version_differences_dir) / f"version_{n - 1}.json"
-    if prev.exists():
-        try:
-            return json.loads(prev.read_text(encoding="utf-8"))
-        except Exception:
-            return None
-    return None
+    """The version_{n-1} record to diff against. Matches both the legacy
+    ``version_{n-1}.json`` and the suffixed ``version_{n-1}_{run_tag}.json``; the
+    ``_`` before the tag keeps ``version_1_*`` from also matching ``version_10``.
+    If concurrent runs produced several version n-1 files, diff against the most
+    recent (lexicographically last = latest timestamp tag)."""
+    version_differences_dir = Path(version_differences_dir)
+    prev_n = n - 1
+    candidates = sorted(
+        list(version_differences_dir.glob(f"version_{prev_n}.json"))
+        + list(version_differences_dir.glob(f"version_{prev_n}_*.json"))
+    )
+    if not candidates:
+        return None
+    try:
+        return json.loads(candidates[-1].read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def _format_diff(prev_record, curr_record):
@@ -187,18 +197,24 @@ def write_version_file(n, version_differences_dir, *,
                        total_timesteps, n_envs, signature,
                        developer_comment="", git_info=None,
                        started_at=None, ended_at=None, duration_seconds=None,
-                       eval_results=None):
+                       eval_results=None, run_tag=None):
     """Write both a machine-readable ``version_{n}.json`` (source of truth) and a
     human-readable ``version_{n}.txt`` (changelog + snapshot) for a trained run.
 
     ``signature`` comes from :func:`env_signature`. ``git_info`` may be supplied
     by the caller (for remote runs that lack a git checkout); otherwise it's
     collected here. ``started_at``/``ended_at`` are timestamp strings and
-    ``duration_seconds`` the wall-clock training time. Returns the ``.txt`` path."""
+    ``duration_seconds`` the wall-clock training time. ``run_tag``, when given, is
+    appended to the filenames (``version_{n}_{run_tag}.json``) so two runs that
+    land on the same ``n`` never overwrite each other's records; it is also stored
+    inside the record so it can be matched back to the model zip. Returns the
+    ``.txt`` path."""
     version_differences_dir = Path(version_differences_dir)
+    stem = f"version_{n}" if not run_tag else f"version_{n}_{run_tag}"
 
     record = {
         "version": n,
+        "run_tag": run_tag,
         "recorded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "timing": {
             "started_at": started_at,
@@ -220,12 +236,12 @@ def write_version_file(n, version_differences_dir, *,
         "developer_comment": developer_comment,
     }
 
-    json_file = version_differences_dir / f"version_{n}.json"
+    json_file = version_differences_dir / f"{stem}.json"
     json_file.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
     prev_record = _load_prev_record(version_differences_dir, n)
     diff_block = _format_diff(prev_record, record)
-    txt_file = version_differences_dir / f"version_{n}.txt"
+    txt_file = version_differences_dir / f"{stem}.txt"
     txt_file.write_text(_format_txt(record, diff_block), encoding="utf-8")
 
     return txt_file

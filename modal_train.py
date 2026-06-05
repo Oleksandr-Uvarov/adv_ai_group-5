@@ -4,7 +4,8 @@ from pathlib import Path
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install("stable-baselines3[extra]", "torch", "numpy")
-    .add_local_python_source("env", "game_engine", "smallgridcnn", "version_utils", "evaluate")
+    .add_local_python_source("env", "game_engine", "smallgridcnn", "version_utils", "evaluate",
+                             "pathfinding", "enemies")
 )
 
 app = modal.App("rl-training", image=image)
@@ -18,6 +19,7 @@ volume = modal.Volume.from_name("rl-artifacts", create_if_missing=True)
 )
 def train(directory: str, total_timesteps: int, developer_comment: str = "",
           git_info: dict = None):
+    import uuid
     from datetime import datetime
     from stable_baselines3 import PPO
     from stable_baselines3.common.env_util import make_vec_env
@@ -46,8 +48,11 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
     for d in (version_dir, zips_dir, tb_dir, version_differences_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    n = len(list(zips_dir.iterdir())) + 1
     model_name = f"{directory}_ppo"
+    # Unique per-run tag so concurrent runs never collide on any artifact (zip,
+    # tb_logs, version files) even if they land on the same sequential n below.
+    # Timestamp for readability + a short random part to break same-second ties.
+    run_tag = f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
     policy_kwargs = dict(
         features_extractor_class=SmallGridCNN,
@@ -66,12 +71,23 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
                 )
 
     start_dt = datetime.now()
-    model.learn(total_timesteps=total_timesteps, tb_log_name=model_name)
+    model.learn(total_timesteps=total_timesteps, tb_log_name=f"{model_name}_{run_tag}")
     end_dt = datetime.now()
-    model_path = str(zips_dir / f"{model_name}_{n}")
-    model.save(model_path)
     print("Training done.")
     env.close()
+
+    # Choose the version number now, not at launch. Computing n up front makes two
+    # concurrent runs both pick the same number and silently overwrite each other:
+    # each saves only at the end, so the second never saw the first's zip. Commit
+    # our TensorBoard logs first, then reload so any run that finished and
+    # committed since we started becomes visible, and only then take the next free
+    # slot. (A residual collision is only possible if two runs reach this point
+    # within the same instant - rare for multi-minute training runs.)
+    volume.commit()   # flush tb_logs written during training
+    volume.reload()   # pull in other runs' committed artifacts
+    n = len(list(zips_dir.iterdir())) + 1
+    model_path = str(zips_dir / f"{model_name}_{n}_{run_tag}")
+    model.save(model_path)
 
     from evaluate import evaluate
     print("Evaluating...")
@@ -92,9 +108,10 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
         ended_at=end_dt.strftime("%Y-%m-%d %H:%M:%S"),
         duration_seconds=(end_dt - start_dt).total_seconds(),
         eval_results=eval_results,
+        run_tag=run_tag,
     )
     volume.commit()
-    print(f"Saved: {model_name}_{n}")
+    print(f"Saved: {model_name}_{n}_{run_tag}")
 
 
 @app.local_entrypoint()
