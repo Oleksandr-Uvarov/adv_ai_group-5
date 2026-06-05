@@ -13,7 +13,10 @@
       "PowerShell(python -c \"from env import GameEnv; e=GameEnv\\(grid_size=10\\); print\\('obs space:', e.observation_space.shape\\); o,_=e.reset\\(\\); print\\('obs shape:', o.shape\\); o,r,d,t,i=e.step\\(1\\); print\\('after step:', o.shape, 'reward', round\\(float\\(r\\),3\\)\\); print\\('melee channel sum \\(=living enemies on distinct cells\\):', float\\(o[8].sum\\(\\)\\)\\)\")",
       "PowerShell(Remove-Item *)",
       "Bash(python -c ' *)",
-      "Bash(SDL_VIDEODRIVER=dummy python -c ' *)"
+      "Bash(SDL_VIDEODRIVER=dummy python -c ' *)",
+      "Bash(.venv/Scripts/python.exe *)",
+      "Bash(Select-String -NotMatch \"UserWarning|pkg_resources|Hello from|pygame 2\")",
+      "PowerShell(.venv/Scripts/python.exe -c \"import evaluate; from env import GameEnv; env=GameEnv\\(grid_size=10\\); m=evaluate.load_model\\('version_history/7_spikes/zips/7_spikes_ppo_1.zip', env\\); eps=evaluate.record_episodes\\(m, env, 3\\); env.close\\(\\); print\\('RESULTS', [e['result'] for e in eps]\\); print\\('frames in ep0:', len\\(eps[0]['frames']\\)\\)\")"
     ]
   }
 }

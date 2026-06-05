@@ -15,3 +15,6 @@ reward
 
 making sure it's possible to eliminate the guard -> what if RNG places walls in such a way that the guard is defended
 by walls from all sides, and you can only pick up a key from one side without being able to shoot the guard first?
+
+the agent tanking the guard (to reach the finish faster?) and being afraid to engage with the warlock if it's next to
+the finish

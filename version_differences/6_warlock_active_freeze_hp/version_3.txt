@@ -1,0 +1,32 @@
+What changed from the previous version:
+    Added env.n_warlock: 1
+    training.total_timesteps: 1000 -> 15000000
+
+Developer comment: make sure the warlock is now always next to the exit. make sure the warlock only shoots whenever the agent is in range (because it seems like the agent is otherwise too afraid to come in line of the fireball of the warlock)
+
+version recorded:
+obs_shape: (12, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 1  action_dim: 9
+reward coeffs: goal 0.1, enemy 0.05, kill 0.3, freeze 0.15
+
+training: total_timesteps=15000000   n_envs=8
+duration: 10h 51m 55s   (started 2026-06-04 22:34:58, ended 2026-06-05 09:26:53)
+git: 9abc6c9bad   recorded: 2026-06-05 09:33:44
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=7009 (70.1%)   lost=798 (8.0%)   truncated=2193 (21.9%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
