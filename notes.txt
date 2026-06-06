@@ -1,0 +1,1045 @@
+1. display the attack of the character (adjust pygame)
+2. make the warlock shoot particles? (display the attack of the warlock)
+3. add HP (half per melee hit, half when grabbing the key with the guard alive, half per using freeze when warlock is alive?)
+4. make freeze an active powerup rather than a pickup
+
+
+
+5. increase tiles? 20x20?
+
+
+
+does my comment about checking for fireball position for the second time make sense
+is it ok that the negative reward is going to stack if the player both dies from the fireball and uses a freeze
+powerup when the warlock is still alive
+should/should remove it? explain why
+
+
+
+  Why performance dropped on 20×20
+
+  Your "fewer meaningful interactions" intuition is correct, but it's one of ~4 things, and not the easiest to fix:
+
+  1. Your horizon is hardcoded for 10×10. step_limit = 100 and the speed bonus max(0.0, (50 - steps)/50). On 20×20, BFS path lengths roughly double, so the key→guard-detour→exit route can eat most of 100 steps — and steps > 50 almost always, so the speed bonus is permanently 0. You silently deleted a
+  chunk of the win incentive. This alone can tank learning.
+  2. Interaction density drops 4×. Same 2 melee + 1 guard + 1 warlock over 4× the area → the agent rarely meets an enemy, so the combat/freeze sub-policies get far less reward signal and far less practice. This is your point, and it's real.
+  3. Reward balance shifts. Your per-tile goal_step shaping telescopes to roughly initial_distance × 0.1, which ~doubles on 20×20, while terminal rewards (key, win) stay fixed. So navigation shaping increasingly dominates the terminal objectives.
+  4. The network got 4× heavier exactly where it's weakest. SmallGridCNN is stride-1 / same-padding throughout, so it never downsamples — the flatten feeds 64 × grid² into the linear layer: 6,400 → 25,600 inputs (~3.3M params in that one layer). 4× the parameters, a harder credit-assignment problem, and
+  presumably the same training budget → undertrained.
+  5. Spawn constraints don't scale. key ≥ 2, exit ≥ 4, melee > 4 are tiny on a 20×20 map, so you get a weird mix of "everything spawned in one corner" trivial episodes and genuinely long ones.
+
+  What actually compensates (roughly in order of impact)
+
+  - Make the size-dependent constants relative to grid_size. Scale step_limit, the speed-bonus denominator, and the spawn-distance minimums with the map. This is the cheapest fix and probably recovers a lot on its own.
+  - Scale density with area, not count. Keep interactions-per-area constant: ~4× the enemies, walls, and freeze pickups. Your channel design already supports this for free — melee share one channel, and you can spawn multiple warlocks into the warlock channel the same way. This directly fixes #2.
+  - Switch to an egocentric (player-centered) observation — the single biggest architectural lever. Feed a fixed-size window (say 11×11) centered on the player instead of the whole board. Benefits: the network input size becomes independent of map size, local combat perception is identical at any scale,
+  and it generalizes/transfers across sizes. Keep your distance_map channel for global navigation (it already encodes "which way to the goal" so the crop doesn't lose the objective). This makes 20×20 barely harder than 10×10 for the policy.
+  - Curriculum / transfer. Train on 10×10, then fine-tune on 20×20. This only works cleanly if the network head is size-invariant — i.e., egocentric crop, or an AdaptiveAvgPool2d/strided-conv head so the conv weights transfer (right now the flatten→linear layer can't transfer because its input dim
+  changes).
+  - Just train longer with more envs. A 4× state space genuinely needs more samples; bump total timesteps, parallel envs, and possibly features_dim and the entropy coefficient for exploration.
+
+  My actual recommendation
+
+  If the point of your project is the interesting part — the multi-objective tradeoffs (key vs. guard, freeze-vs-warlock penalty, shoot vs. flee) — then grid size is a distraction, and I'd stay at 10×10 (or a modest 12–14) and spend the effort on behavioral richness and clean evaluation instead. The 20×20
+  result mostly tests navigation and exploration under a fixed compute budget, which isn't where your design is novel. Also note the practical cost: rejection-sampling valid maps, the per-step BFS, and longer episodes mean wall-clock training grows more than 4×.
+
+  If you do want to keep 20×20 — e.g., to show generalization across map sizes, which would be a genuinely nice result for the writeup — then commit to it properly: relative constants + scaled density + egocentric observation + curriculum. That combination is what makes large grids work, and the
+  egocentric+curriculum angle gives you a real story ("trained on 10×10, generalizes to 20×20") rather than just a worse number.
+
+  Want me to implement the low-risk pieces first — making step_limit, the speed bonus, and the spawn minimums scale with grid_size, and scaling enemy/wall/pickup counts by area? Those are contained changes I can do now. The egocentric-observation refactor is bigger and touches _get_state + the CNN, so I'd
+  do that as a separate step if you want to go that route.
+
+
+
+
+
+waves?
+5 enemies
+7 enemies
+last level with a boss that spans 2x2 tiles?
+
+
+
+let's say i want my game to resemble rogulike more than it does now. what i mean is that i want to add levels;
+when the agent reaches the exit and it's not the last level, then it appears on the next level instead of ending the game.
+
+this is theoretically possible to solely do with a pygame wrapper - no need for the agent to know that it actually goes
+to another level. however, how will it behave if it for some reason has to make another move if it has just reached the
+finish? how would the logic change for this, then? no need to change the code for now; just explain it to me. if changes
+are needed to the game itself rather than to just pygame, than tell me which ones. what about rewarding? lastly, i want
+a heart to appear after the agent is done with a level. for this, there should be an observation channel even on the first
+level to not break the symmetry, correct? but in this case, i assume that a pygame wrapper is not enough. what do i do then?
+
+
+
+dragon:
+goes 1 step
+goes 1 step
+leaps 2 steps
+flame all around in front of it spanning two tiles?
+
+
+
+{"pixels":[{"col":126,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":126,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":127,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":128,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":129,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":130,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":131,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":132,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":133,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":134,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":135,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":136,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":276,"color":4286774010},{"col":137,"row":277,"color":4286774010},{"col":137,"row":278,"color":4286774010},{"col":137,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":137,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":273,"color":4286774010},{"col":138,"row":274,"color":4286774010},{"col":138,"row":275,"color":4286774010},{"col":138,"row":276,"color":4286774010},{"col":138,"row":277,"color":4286774010},{"col":138,"row":278,"color":4286774010},{"col":138,"row":279,"color":4286774010},{"col":138,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":138,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":275,"color":4286774010},{"col":139,"row":276,"color":4286774010},{"col":139,"row":277,"color":4286774010},{"col":139,"row":278,"color":4286774010},{"col":139,"row":279,"color":4286774010},{"col":139,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":139,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":272,"color":4286774010},{"col":140,"row":273,"color":4286774010},{"col":140,"row":274,"color":4286774010},{"col":140,"row":275,"color":4286774010},{"col":140,"row":276,"color":4286774010},{"col":140,"row":277,"color":4286774010},{"col":140,"row":278,"color":4286774010},{"col":140,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":140,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":271,"color":4286774010},{"col":141,"row":272,"color":4286774010},{"col":141,"row":273,"color":4286774010},{"col":141,"row":274,"color":4286774010},{"col":141,"row":275,"color":4286774010},{"col":141,"row":276,"color":4286774010},{"col":141,"row":277,"color":4286774010},{"col":141,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":141,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":268,"color":4286774010},{"col":142,"row":269,"color":4286774010},{"col":142,"row":270,"color":4286774010},{"col":142,"row":271,"color":4286774010},{"col":142,"row":272,"color":4286774010},{"col":142,"row":273,"color":4286774010},{"col":142,"row":274,"color":4286774010},{"col":142,"row":275,"color":4286774010},{"col":142,"row":276,"color":4286774010},{"col":142,"row":277,"color":4286774010},{"col":142,"row":278,"color":4286774010},{"col":142,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":142,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":269,"color":4286774010},{"col":143,"row":270,"color":4286774010},{"col":143,"row":271,"color":4286774010},{"col":143,"row":272,"color":4286774010},{"col":143,"row":273,"color":4286774010},{"col":143,"row":274,"color":4286774010},{"col":143,"row":275,"color":4286774010},{"col":143,"row":276,"color":4286774010},{"col":143,"row":277,"color":4286774010},{"col":143,"row":278,"color":4286774010},{"col":143,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":143,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":270,"color":4286774010},{"col":144,"row":271,"color":4286774010},{"col":144,"row":272,"color":4286774010},{"col":144,"row":273,"color":4286774010},{"col":144,"row":274,"color":4286774010},{"col":144,"row":275,"color":4286774010},{"col":144,"row":276,"color":4286774010},{"col":144,"row":277,"color":4286774010},{"col":144,"row":278,"color":4286774010},{"col":144,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":144,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":271,"color":4286774010},{"col":145,"row":272,"color":4286774010},{"col":145,"row":273,"color":4286774010},{"col":145,"row":274,"color":4286774010},{"col":145,"row":275,"color":4286774010},{"col":145,"row":276,"color":4286774010},{"col":145,"row":277,"color":4286774010},{"col":145,"row":278,"color":4286774010},{"col":145,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":145,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":272,"color":4286774010},{"col":146,"row":273,"color":4286774010},{"col":146,"row":274,"color":4286774010},{"col":146,"row":275,"color":4286774010},{"col":146,"row":276,"color":4286774010},{"col":146,"row":277,"color":4286774010},{"col":146,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":146,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":273,"color":4286774010},{"col":147,"row":274,"color":4286774010},{"col":147,"row":275,"color":4286774010},{"col":147,"row":276,"color":4286774010},{"col":147,"row":277,"color":4286774010},{"col":147,"row":278,"color":4286774010},{"col":147,"row":279,"color":4286774010},{"col":147,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":147,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":275,"color":4286774010},{"col":148,"row":276,"color":4286774010},{"col":148,"row":277,"color":4286774010},{"col":148,"row":278,"color":4286774010},{"col":148,"row":279,"color":4286774010},{"col":148,"row":280,"color":4286774010},{"col":148,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":148,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":271,"color":4286774010},{"col":149,"row":272,"color":4286774010},{"col":149,"row":273,"color":4286774010},{"col":149,"row":274,"color":4286774010},{"col":149,"row":275,"color":4286774010},{"col":149,"row":276,"color":4286774010},{"col":149,"row":277,"color":4286774010},{"col":149,"row":278,"color":4286774010},{"col":149,"row":279,"color":4286774010},{"col":149,"row":280,"color":4286774010},{"col":149,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":149,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":274,"color":4286774010},{"col":150,"row":275,"color":4286774010},{"col":150,"row":276,"color":4286774010},{"col":150,"row":277,"color":4286774010},{"col":150,"row":278,"color":4286774010},{"col":150,"row":279,"color":4286774010},{"col":150,"row":280,"color":4286774010},{"col":150,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":150,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":277,"color":4286774010},{"col":151,"row":278,"color":4286774010},{"col":151,"row":279,"color":4286774010},{"col":151,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":151,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":152,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":153,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":154,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":155,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":156,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":157,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":158,"row":288,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":255,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":256,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":257,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":258,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":259,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":260,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":261,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":262,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":263,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":264,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":265,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":266,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":267,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":268,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":269,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":270,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":271,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":272,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":273,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":274,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":275,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":276,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":277,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":278,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":279,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":280,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":281,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":282,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":283,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":284,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":285,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":286,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":287,"color":"rgba(0, 0, 0, 0)"},{"col":159,"row":288,"color":"rgba(0, 0, 0, 0)"}],"time":1780679033245}
+
+❯ now add a fourth level where there's one enemy: a dragon.
+
+  there's already a sprite for a dragon, a small fire, and a big fire.
+
+  it should follow the following logic:
+  1. the 4th level is added
+  2. there's only 1 one enemy on the 4th level - the dragon
+  3. no potions are present on the 4th level, but hp is also restored
+  4. the dragon spans 2x2 tiles instead of 1 tile (so adjust the sprite to match that, too - make it 4 times bigger than usual)
+  5. it follows a pattern of attacks: it leaps 1 tile forward to the player, leaps 1 tile again, then spreads fire all around it in a circle that lasts for 2 ticks: first one should have the fire_big.png as a dispaly, the 2nd one should have fire_small
+  6. whenever the dragon tries to reach the player but its movement would encounter a wall, it breaks it. same for the fire that it spreads; it also breaks walls.
+
+  make all the changes however you please but explain all of them. furthermore, i assume that walls that break is an additional thing that the agent must learn: correct or not correct? should the observation channel for walls be somehow changed? the obvious change is to remove the wall.
+  in any case, make the changes however you please.
+
+● This is a substantial boss addition. Let me confirm the exact sprite filenames first:
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● All three sprites exist (dragon.png, fire_big.png, fire_small.png). Let me re-read the current game_engine.py to anchor my edits precisely:
+
+  Read 1 file (ctrl+o to expand)
+
+● Filenames confirmed. Now I'll make all the changes. Starting with game_engine.py constants:
+
+● Update(game_engine.py)
+  ⎿  Added 1 line
+      19      # version_utils.env_signature / reward_coeffs).
+      20      REWARD_GOAL_STEP = 0.1    # per-tile progress toward the current goal
+      21      REWARD_KILL = 0.3         # shooting an enemy (melee, guard or warlock)
+      22 +    REWARD_DRAGON_KILL = 1.0  # shooting the boss dragon (far harder than a normal kill)
+      23      REWARD_KEY = 0.3          # picking up the key
+      24      REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
+      25      REWARD_ALL_CLEARED = 0.5  # one-time per level: every enemy defeated, exit opens
+
+● Update(game_engine.py)
+  ⎿  Added 10 lines, removed 6 lines
+      36      WARLOCK_DAMAGE = 50
+      37      WARLOCK_FIREBALL_RANGE = 3
+      38      SPIKE_DAMAGE = 34
+      39 +    DRAGON_CONTACT_DAMAGE = 50  # the dragon's 2x2 body leaping onto the player
+      40 +    DRAGON_FIRE_DAMAGE = 50     # one fire-ring tick (two ticks land, so both = lethal)
+      41
+      42      FREEZE_TICKS = 2          # how long a single freeze lasts
+      43      FREEZE_CHARGES = 2        # freezes available per run (NOT refilled between levels)
+      44      SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
+      45      N_SPIKES = 3
+      46
+      45 -    # Roguelike levels played back-to-back inside one episode, as
+      46 -    # (total_melee, max_active_melee) pairs: of `total_melee` enemies only
+      47 -    # `max_active_melee` are on the board at once, the rest spawn in as they die.
+      48 -    # HP and freeze charges carry across levels; clearing the last level wins the
+      49 -    # run. The warlock/guard (one each) are unchanged per level.
+      47 +    # Roguelike levels played back-to-back inside one episode. The first three are
+      48 +    # melee levels, given as (total_melee, max_active_melee) pairs: of
+      49 +    # `total_melee` enemies only `max_active_melee` are on the board at once, the
+      50 +    # rest spawn in as they die. The fourth (DRAGON_LEVEL) is a boss level - a
+      51 +    # single 2x2 dragon, no other enemies and no potion, but HP restored to full.
+      52 +    # HP and freeze charges carry across levels; clearing the last level wins.
+      53      LEVELS = [(4, 2), (5, 2), (7, 3)]
+      51 -    N_LEVELS = len(LEVELS)
+      54 +    DRAGON_LEVEL = len(LEVELS)   # level index of the boss (the 4th level)
+      55 +    N_LEVELS = len(LEVELS) + 1
+      56
+      57      @classmethod
+      58      def reward_coeffs(cls):
+
+● Update(game_engine.py)
+  ⎿  Added 1 line
+      60          return {
+      61              "goal_step": cls.REWARD_GOAL_STEP,
+      62              "kill": cls.REWARD_KILL,
+      63 +            "dragon_kill": cls.REWARD_DRAGON_KILL,
+      64              "key": cls.REWARD_KEY,
+      65              "freeze": cls.REWARD_FREEZE,
+      66              "all_cleared": cls.REWARD_ALL_CLEARED,
+
+● Update(game_engine.py)
+  ⎿  Added 3 lines, removed 1 line
+      80              "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE,
+      81              "n_spikes": cls.N_SPIKES,
+      82              "spike_damage": cls.SPIKE_DAMAGE,
+      83 +            "dragon_contact_damage": cls.DRAGON_CONTACT_DAMAGE,
+      84 +            "dragon_fire_damage": cls.DRAGON_FIRE_DAMAGE,
+      85              "n_levels": cls.N_LEVELS,
+      84 -            "levels": [list(lvl) for lvl in cls.LEVELS]
+      86 +            "melee_levels": [list(lvl) for lvl in cls.LEVELS]
+      87          }
+      88
+      89      def __init__(self, grid_size=10):
+
+● Now split _setup_level into a dispatcher + _setup_melee_level:
+
+● Update(game_engine.py)
+  ⎿  Added 19 lines, removed 5 lines
+      106          return self._get_state()
+      107
+      108      def _setup_level(self):
+      109 -        """Generate the map and entities for the current level. Per-level enemy
+      110 -        counts come from LEVELS; a healing potion appears on every level after the
+      111 -        first (the player arrives there with carried-over HP). HP, freeze charges,
+      112 -        the level index and the won/done flags are NOT reset here so they persist
+      113 -        across levels."""
+      109 +        """Build the current level. Sets the dragon/fire state to empty first so
+      110 +        those observation channels exist (and read zero) on every non-dragon
+      111 +        level, keeping the observation shape constant, then dispatches to the
+      112 +        melee or boss builder. HP, freeze charges, the level index and the
+      113 +        won/done flags are not reset here so they persist across levels (the
+      114 +        dragon level restores HP itself)."""
+      115 +        self.dragon_pos = None
+      116 +        self.dragon_phase = 0
+      117 +        self.dragon_fire_tiles = []
+      118 +        self.dragon_fire_stage = None
+      119 +        if self.level == self.DRAGON_LEVEL:
+      120 +            self._setup_dragon_level()
+      121 +        else:
+      122 +            self._setup_melee_level()
+      123 +
+      124 +    def _setup_melee_level(self):
+      125 +        """Generate the map and entities for a melee level (the first three).
+      126 +        Per-level enemy counts come from LEVELS; a healing potion appears on every
+      127 +        level after the first (the player arrives there with carried-over HP)."""
+      128          total_melee, self.max_active_melee = self.LEVELS[self.level]
+      129          # Simple map: walls on border, floor inside
+      130          while True:
+
+● Now insert the dragon level setup before _move_agent:
+
+● Update(game_engine.py)
+  ⎿  Added 88 lines
+      243                      and bfs_distance(self.grid, self.player_pos, self.exit_pos) >= 4):
+      244                  break
+      245
+      246 +    def _setup_dragon_level(self):
+      247 +        """Boss level: one 2x2 dragon and nothing else (no melee, guard, warlock
+      248 +        or potion). HP is restored to full on entry - the only healing this level
+      249 +        offers. Layout is otherwise the usual player / key / exit / spikes, and
+      250 +        the dragon is the enemy that must be defeated for the exit to open."""
+      251 +        self.hp = self.MAX_HP            # full heal entering the boss (no potions here)
+      252 +        self.max_active_melee = 0
+      253 +        self.melee_poses = []
+      254 +        self.melee_reserve = 0
+      255 +        self.guard_pos = None
+      256 +        self.warlock_pos = None
+      257 +        self.warlock_fireball_pos = None
+      258 +        self.warlock_fireball_dir = None
+      259 +        self.warlock_fireball_ticks = 0
+      260 +        self.potion_pos = None
+      261 +
+      262 +        while True:
+      263 +            self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
+      264 +            self.grid[0, :]  = WALL
+      265 +            self.grid[-1, :] = WALL
+      266 +            self.grid[:, 0]  = WALL
+      267 +            self.grid[:, -1] = WALL
+      268 +            for r in range(1, self.grid_size - 1):
+      269 +                for c in range(1, self.grid_size - 1):
+      270 +                    if random.random() < 0.2:
+      271 +                        self.grid[r, c] = WALL
+      272 +
+      273 +            cells = floor_cells(self.grid)
+      274 +            if len(cells) < 3 + self.N_SPIKES:
+      275 +                continue
+      276 +
+      277 +            positions = random.sample(cells, 3)   # player, exit, key
+      278 +            self.player_pos = list(positions[0])
+      279 +            self.exit_pos   = list(positions[1])
+      280 +            self.key_pos    = list(positions[2])
+      281 +            occupied = set(positions)
+      282 +
+      283 +            # Place the 2x2 dragon on a clear, unoccupied block a few tiles away.
+      284 +            dragon_tl = self._sample_dragon_topleft(occupied)
+      285 +            if dragon_tl is None:
+      286 +                continue
+      287 +            self.dragon_pos = dragon_tl
+      288 +            self.dragon_phase = 0
+      289 +            self.dragon_fire_tiles = []
+      290 +            self.dragon_fire_stage = None
+      291 +            occupied.update(tuple(t) for t in self._dragon_tiles())
+      292 +
+      293 +            free = [cell for cell in cells
+      294 +                    if cell not in occupied and wall_neighbor_count(self.grid, cell) <= 1]
+      295 +            if len(free) < self.N_SPIKES:
+      296 +                continue
+      297 +            self.spike_poses = [list(cell) for cell in random.sample(free, self.N_SPIKES)]
+      298 +            self.spike_statuses = [True] * self.N_SPIKES
+      299 +
+      300 +            # Level-local state (the dragon has no guard, so the key is free).
+      301 +            self.freeze_ticks = 0
+      302 +            self.has_key = False
+      303 +            self.enemies_cleared_awarded = False
+      304 +            self.steps = 0
+      305 +            self.last_shot = None
+      306 +
+      307 +            spikes_set = {tuple(s) for s in self.spike_poses}
+      308 +            if (is_reachable(self.grid, self.player_pos, self.exit_pos)
+      309 +                    and is_reachable(self.grid, self.player_pos, self.key_pos)
+      310 +                    and is_reachable_avoiding(self.grid, self.player_pos, self.key_pos, spikes_set)
+      311 +                    and is_reachable_avoiding(self.grid, self.key_pos, self.exit_pos, spikes_set)
+      312 +                    and bfs_distance(self.grid, self.player_pos, self.key_pos) >= 2
+      313 +                    and bfs_distance(self.grid, self.player_pos, self.exit_pos) >= 4):
+      314 +                break
+      315 +
+      316 +    def _sample_dragon_topleft(self, occupied):
+      317 +        """A 2x2 top-left whose whole footprint is floor and unoccupied, and whose
+      318 +        centre is at least 4 tiles (Manhattan) from the player so the boss does
+      319 +        not start on top of it. None if nothing fits. Top-left row/col stay in
+      320 +        [1, grid_size - 3] so the 2x2 never touches the wall border."""
+      321 +        candidates = []
+      322 +        for r in range(1, self.grid_size - 2):
+      323 +            for c in range(1, self.grid_size - 2):
+      324 +                foot = [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
+      325 +                if any(self.grid[fr, fc] == WALL for fr, fc in foot):
+      326 +                    continue
+      327 +                if any((fr, fc) in occupied for fr, fc in foot):
+      328 +                    continue
+      329 +                if abs(self.player_pos[0] - (r + 0.5)) + abs(self.player_pos[1] - (c + 0.5)) < 4:
+      330 +                    continue
+      331 +                candidates.append([r, c])
+      332 +        return random.choice(candidates) if candidates else None
+      333 +
+      334      def _move_agent(self, action, terminated):
+      335          if self.has_key:
+      336              goal_pos = self.exit_pos
+
+● Now block player movement into the dragon's body:
+
+● Update(game_engine.py)
+  ⎿  Added 2 lines, removed 2 lines
+      344          new_r = self.player_pos[0] + dr
+      345          new_c = self.player_pos[1] + dc
+      346
+      347 -        # Don't move into walls
+      348 -        if self.grid[new_r, new_c] != WALL:
+      347 +        # Don't move into walls or into the dragon's body (its 2x2 is solid).
+      348 +        if self.grid[new_r, new_c] != WALL and [new_r, new_c] not in self._dragon_tiles():
+      349              self.player_pos = [new_r, new_c]
+      350
+      351          new_goal_dist = bfs_distance(self.grid, self.player_pos, goal_pos)
+
+● Now the dragon action in step():
+
+● Update(game_engine.py)
+  ⎿  Added 2 lines
+      461                      reward, terminated = self._next_enemy_action(reward, terminated)
+      462                  if not terminated:
+      463                      reward, terminated = self._warlock_action(reward, terminated)
+      464 +                if not terminated and self.dragon_pos is not None:
+      465 +                    reward, terminated = self._dragon_action(reward, terminated)
+      466              # Fill any slot left empty by a kill with a fresh enemy from the
+      467              # reserve. Runs regardless of freeze, since the player can still shoot
+      468              # an enemy on a frozen step.
+
+● Now _shoot — make the dragon's 2×2 body shootable with its own kill reward:
+
+● Update(game_engine.py)
+  ⎿  Added 15 lines, removed 5 lines
+      526          deltas = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0)}
+      527          direction = directions[action]
+      528
+      529 -        enemies = [*self.melee_poses, self.guard_pos, self.warlock_pos]
+      529 +        # The dragon's whole 2x2 body is shootable; a hit on any of its tiles
+      530 +        # kills the boss in one shot, like every other enemy.
+      531 +        enemies = [*self.melee_poses, self.guard_pos, self.warlock_pos, *self._dragon_tiles()]
+      532          enemies = [enemy for enemy in enemies if enemy is not None]
+      533
+      534          closest_enemy = (
+     ...
+      544          if (closest_enemy is not None
+      545                  and bfs_distance(self.grid, self.player_pos, closest_enemy) <= self.SHOOT_RANGE):
+      546              hit = list(closest_enemy)
+      545 -            if list(closest_enemy) == self.guard_pos:
+      547 +            if self.dragon_pos is not None and hit in self._dragon_tiles():
+      548 +                self.dragon_pos = None
+      549 +                self.dragon_fire_tiles = []
+      550 +                self.dragon_fire_stage = None
+      551 +                hit_sprite = "dragon"
+      552 +                reward = self.REWARD_DRAGON_KILL
+      553 +            elif hit == self.guard_pos:
+      554                  self.guard_pos = None
+      555                  hit_sprite = "guard"
+      548 -            elif list(closest_enemy) == self.warlock_pos:
+      556 +                reward = self.REWARD_KILL
+      557 +            elif hit == self.warlock_pos:
+      558                  self.warlock_pos = None
+      559                  hit_sprite = "warlock"
+      560 +                reward = self.REWARD_KILL
+      561              else:
+      562                  hit_sprite = "enemy"
+      563                  for i in range(len(self.melee_poses)):
+      554 -                    if list(closest_enemy) == self.melee_poses[i]:
+      564 +                    if hit == self.melee_poses[i]:
+      565                          self.melee_poses[i] = None
+      556 -            reward = self.REWARD_KILL
+      566 +                reward = self.REWARD_KILL
+      567
+      568          # Record the projectile's path purely for rendering; the game logic above
+      569          # is unchanged (still hitscan) and the observation never sees this.
+
+● Now the observation channels — dragon body, fire ring, and phase plane:
+
+● Update(game_engine.py)
+  ⎿  Added 10 lines
+      617          # Potion channel: always present (zeros when there is no potion, e.g. the
+      618          # first level) so the observation shape is identical on every level.
+      619          potion = np.zeros_like(self.grid, dtype=np.float32)
+      620 +        # Dragon body (its 2x2) and its fire ring. The phase plane is a constant
+      621 +        # carrying the dragon's attack phase (normalized 0..1) so the agent can
+      622 +        # anticipate the fire that follows the two leaps. All three read zero on
+      623 +        # the non-dragon levels, keeping the observation shape constant.
+      624 +        dragon = np.zeros_like(self.grid, dtype=np.float32)
+      625 +        dragon_fire = np.zeros_like(self.grid, dtype=np.float32)
+      626 +        dragon_phase = np.full(
+      627 +            (self.grid_size, self.grid_size),
+      628 +            (self.dragon_phase / 3.0) if self.dragon_pos is not None else 0.0,
+      629 +            dtype=np.float32)
+      630
+      631          # setting every object's position to 1 in the respective grid
+      632          player[self.player_pos[0], self.player_pos[1]] = 1.0
+
+● Update(game_engine.py)
+  ⎿  Added 7 lines, removed 1 line
+      651              spikes[spike_pos[0], spike_pos[1]] = 1.0
+      652          if self.potion_pos is not None:
+      653              potion[self.potion_pos[0], self.potion_pos[1]] = 1.0
+      654 +        for tile in self._dragon_tiles():
+      655 +            dragon[tile[0], tile[1]] = 1.0
+      656 +        for tile in self.dragon_fire_tiles:
+      657 +            if 0 <= tile[0] < self.grid_size and 0 <= tile[1] < self.grid_size:
+      658 +                dragon_fire[tile[0], tile[1]] = 1.0
+      659
+      660          goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
+      661
+      662          return np.stack([walls, player, exit_, freeze,
+      663                           freeze_status, distance_map(self.grid, goal), key,
+      659 -                         guard, melee, warlock, warlock_fireball, hp, spikes, potion],
+      664 +                         guard, melee, warlock, warlock_fireball, hp, spikes, potion,
+      665 +                         dragon, dragon_fire, dragon_phase],
+      666                          axis=0)
+
+● Now enemies.py — import WALL, add the dragon to occupancy, and add all the dragon behavior. Let me read the import line and class end:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(enemies.py)
+  ⎿  Added 10 lines, removed 4 lines
+       1  """Enemy behaviour for :class:`game_engine.Game`, split out as a mixin.
+       2
+       3  ``EnemyMixin`` carries everything the enemies do - the melee enemies (collision-
+       4 -free pathing toward the player and spawning in from the reserve) and the warlock
+       5 -(kiting movement plus its fireball). ``Game`` inherits from it, so these methods
+       6 -run with full access to the game's state via ``self`` (``self.grid``,
+       4 +free pathing toward the player and spawning in from the reserve), the warlock
+       5 +(kiting movement plus its fireball) and the boss dragon (2x2, leap-leap-fire
+       6 +pattern, smashes through walls). ``Game`` inherits from it, so these methods run
+       7 +with full access to the game's state via ``self`` (``self.grid``,
+       8  ``self.player_pos``, the entity lists, the tunable constants, ``self._damage_player``,
+       9  etc.). All map queries go through the pure helpers in :mod:`pathfinding`.
+      10
+     ...
+      14  import random
+      15
+      16  from pathfinding import (
+      16 -    FLOOR, floor_cells, bfs_distance, bfs_step_toward, is_reachable,
+      17 +    FLOOR, WALL, floor_cells, bfs_distance, bfs_step_toward, is_reachable,
+      18  )
+      19
+      20
+      21 +def _sign(x):
+      22 +    """-1, 0 or +1 - the direction of x."""
+      23 +    return (x > 0) - (x < 0)
+      24 +
+      25 +
+      26  class EnemyMixin:
+
+● Update(enemies.py)
+  ⎿  Added 2 lines
+      38              cells.add(tuple(self.warlock_pos))
+      39          if self.potion_pos is not None:
+      40              cells.add(tuple(self.potion_pos))
+      41 +        for t in self._dragon_tiles():
+      42 +            cells.add(tuple(t))
+      43          for m in self.melee_poses:
+      44              if m is not None:
+      45                  cells.add(tuple(m))
+
+● Now read the end of enemies.py to append the dragon methods:
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(enemies.py)
+  ⎿  Added 83 lines
+      269                  break
+      270              tiles.append([r, c])
+      271          return tiles
+      272 +
+      273 +    # ----------------------------------------------------------------- dragon
+      274 +    def _dragon_tiles(self):
+      275 +        """The four [row, col] tiles the 2x2 dragon occupies, or [] if it is dead
+      276 +        or this level has no dragon."""
+      277 +        if self.dragon_pos is None:
+      278 +            return []
+      279 +        r, c = self.dragon_pos
+      280 +        return [[r, c], [r, c + 1], [r + 1, c], [r + 1, c + 1]]
+      281 +
+      282 +    def _dragon_action(self, reward, terminated):
+      283 +        """Run one tick of the dragon's repeating attack pattern: leap, leap,
+      284 +        fire (big), fire (small). Phases 0-1 leap one tile toward the player;
+      285 +        phase 2 erupts a fire ring around the dragon; phase 3 keeps that same ring
+      286 +        burning one more tick (shown smaller). The phase advances every tick."""
+      287 +        phase = self.dragon_phase
+      288 +        if phase in (0, 1):
+      289 +            # Leaping: no fire on the ground this tick.
+      290 +            self.dragon_fire_tiles = []
+      291 +            self.dragon_fire_stage = None
+      292 +            reward, terminated = self._dragon_leap(reward, terminated)
+      293 +        elif phase == 2:
+      294 +            self._dragon_ignite()                  # big fire, smashes walls
+      295 +            reward, terminated = self._dragon_burn(reward, terminated)
+      296 +        else:  # phase == 3
+      297 +            self.dragon_fire_stage = "small"       # same tiles, second/last tick
+      298 +            reward, terminated = self._dragon_burn(reward, terminated)
+      299 +        self.dragon_phase = (phase + 1) % 4
+      300 +        return reward, terminated
+      301 +
+      302 +    def _dragon_leap(self, reward, terminated):
+      303 +        """Move the 2x2 dragon one tile toward the player, breaking any walls the
+      304 +        body lands on (it smashes through terrain). Prefers the axis with the
+      305 +        larger gap, falling back to the other if the move would push the body off
+      306 +        the inner grid. If the player ends up under the body, it is trampled."""
+      307 +        r, c = self.dragon_pos
+      308 +        pr, pc = self.player_pos
+      309 +        ddr, ddc = pr - (r + 0.5), pc - (c + 0.5)
+      310 +        if abs(ddr) >= abs(ddc):
+      311 +            moves = [(_sign(ddr), 0), (0, _sign(ddc))]
+      312 +        else:
+      313 +            moves = [(0, _sign(ddc)), (_sign(ddr), 0)]
+      314 +        for mr, mc in moves:
+      315 +            if mr == 0 and mc == 0:
+      316 +                continue
+      317 +            nr, nc = r + mr, c + mc
+      318 +            # Keep the 2x2 inside the inner grid (top-left in [1, size-3]); the
+      319 +            # dragon smashes interior walls but never the map border.
+      320 +            if 1 <= nr <= self.grid_size - 3 and 1 <= nc <= self.grid_size - 3:
+      321 +                r, c = nr, nc
+      322 +                break
+      323 +        self.dragon_pos = [r, c]
+      324 +        for fr, fc in self._dragon_tiles():
+      325 +            if self.grid[fr, fc] == WALL:
+      326 +                self.grid[fr, fc] = FLOOR
+      327 +        if [self.player_pos[0], self.player_pos[1]] in self._dragon_tiles():
+      328 +            reward, terminated = self._damage_player(self.DRAGON_CONTACT_DAMAGE)
+      329 +        return reward, terminated
+      330 +
+      331 +    def _dragon_ignite(self):
+      332 +        """Light the ring of tiles surrounding the 2x2 body (the 4x4 box minus the
+      333 +        body) on fire and smash any interior walls in it. Border tiles can be in
+      334 +        the ring but are never broken. Sets the fire tiles + 'big' display stage."""
+      335 +        r, c = self.dragon_pos
+      336 +        body = {(fr, fc) for fr, fc in self._dragon_tiles()}
+      337 +        tiles = []
+      338 +        for rr in range(r - 1, r + 3):
+      339 +            for cc in range(c - 1, c + 3):
+      340 +                if (rr, cc) in body:
+      341 +                    continue
+      342 +                if 0 <= rr < self.grid_size and 0 <= cc < self.grid_size:
+      343 +                    tiles.append([rr, cc])
+      344 +                    if (1 <= rr <= self.grid_size - 2 and 1 <= cc <= self.grid_size - 2
+      345 +                            and self.grid[rr, cc] == WALL):
+      346 +                        self.grid[rr, cc] = FLOOR
+      347 +        self.dragon_fire_tiles = tiles
+      348 +        self.dragon_fire_stage = "big"
+      349 +
+      350 +    def _dragon_burn(self, reward, terminated):
+      351 +        """Damage the player if it is standing on a burning tile this fire tick."""
+      352 +        if [self.player_pos[0], self.player_pos[1]] in self.dragon_fire_tiles:
+      353 +            reward, terminated = self._damage_player(self.DRAGON_FIRE_DAMAGE)
+      354 +        return reward, terminated
+
+● Now the renderer — load the dragon (2× size) + fire sprites, and draw them:
+
+● Update(pg\pygame_renderer.py)
+  ⎿  Added 6 lines, removed 1 line
+      21          self.sprites = {}
+      22          for name in ("floor", "wall", "player", "exit", "enemy", "key",
+      23                       "guard", "fireball", "warlock", "warlock_fireball",
+      24 -                     "activated_spikes", "potion"):
+      24 +                     "activated_spikes", "potion", "fire_big", "fire_small"):
+      25              img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
+      26              self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
+      27 +        # The dragon spans 2x2 tiles, so its sprite is scaled to twice the tile
+      28 +        # size and blitted from its top-left corner.
+      29 +        dragon_img = pygame.image.load(_SPRITES_DIR / "dragon.png").convert_alpha()
+      30 +        self.sprites["dragon"] = pygame.transform.scale(
+      31 +            dragon_img, (2 * self.TILE_SIZE, 2 * self.TILE_SIZE))
+      32
+      33      def draw(self, game):
+      34          # Shooting is hitscan in the game logic, but for display we animate the
+
+● Update(pg\pygame_renderer.py)
+  ⎿  Added 8 lines
+      70          # The potion is a floor pickup; draw it under the entities too.
+      71          blit("potion", getattr(game, "potion_pos", None))
+      72
+      73 +        # Dragon fire ring (ground hazard): a big flame on the first tick, a small
+      74 +        # one on the second. Drawn under the entities.
+      75 +        fire_tiles = getattr(game, "dragon_fire_tiles", [])
+      76 +        if fire_tiles:
+      77 +            fire_name = "fire_big" if getattr(game, "dragon_fire_stage", None) == "big" else "fire_small"
+      78 +            for tile in fire_tiles:
+      79 +                blit(fire_name, tile)
+      80 +
+      81          blit("exit", game.exit_pos)
+      82          blit("key", game.key_pos)
+      83          for enemy_pos in game.melee_poses:
+
+● Update(pg\pygame_renderer.py)
+  ⎿  Added 5 lines
+      89          blit("warlock_fireball", game.warlock_fireball_pos)
+      90          if extra is not None:
+      91              blit(extra[0], extra[1])
+      92 +        # The dragon occupies 2x2 tiles; its sprite is pre-scaled to match and is
+      93 +        # blitted from its top-left corner, under the player.
+      94 +        dpos = getattr(game, "dragon_pos", None)
+      95 +        if dpos is not None:
+      96 +            self.screen.blit(self.sprites["dragon"], (dpos[1] * ts, dpos[0] * ts))
+      97          blit("player", game.player_pos)
+      98          if fireball is not None:
+      99              blit("fireball", fireball)
+
+● Now the ansi render in env.py — show dragon (D) and fire (f):
+
+● Update(env.py)
+  ⎿  Added 2 lines
+      58                  grid_display[sp[0]][sp[1]] = 'S' if g.spike_statuses[i] else 's'
+      59              if g.potion_pos is not None:
+      60                  grid_display[g.potion_pos[0]][g.potion_pos[1]] = 'P'
+      61 +            for t in getattr(g, "dragon_fire_tiles", []):
+      62 +                grid_display[t[0]][t[1]] = 'f'
+      63              grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
+      64              for enemy_pos in g.melee_poses:
+      65                  if enemy_pos is not None:
+
+● Update(env.py)
+  ⎿  Added 2 lines
+      72                  grid_display[g.key_pos[0]][g.key_pos[1]] = 'K'
+      73              if g.guard_pos is not None:
+      74                  grid_display[g.guard_pos[0]][g.guard_pos[1]] = 'G'
+      75 +            for t in g._dragon_tiles():
+      76 +                grid_display[t[0]][t[1]] = 'D'
+      77              # Drawn last so the player is never hidden under another glyph.
+      78              grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
+      79              for row in grid_display:
+
+● Now compile and run a comprehensive dragon-level test:
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+
+   ".venv/Scripts/python.exe" -m py_compile game_engine.py enemies.py pathfinding.py env.py evaluate.py version_utils.py 2>&1 && echo "compile OK" && \
+   cat > _dr.py <<'PY'
+   import random, numpy as np
+   from game_engine import Game
+   random.seed(0)
+   g = Game(10)
+
+   def force_win_step(g):
+       g.guard_pos=None; g.warlock_pos=None; g.warlock_fireball_pos=None
+       g.dragon_pos=None; g.dragon_fire_tiles=[]
+       g.melee_poses=[None]*len(g.melee_poses); g.melee_reserve=0
+       g.has_key=True; g.freeze_ticks=5
+       er,ec=g.exit_pos
+       for dr,dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+           r,c=er+dr,ec+dc
+           if g.grid[r,c]==0 and [r,c] not in g._dragon_tiles(): g.player_pos=[r,c]; break
+       dr,dc=er-g.player_pos[0], ec-g.player_pos[1]
+       return g.step({(-1,0):0,(1,0):1,(0,-1):2,(0,1):3}[(dr,dc)])
+
+   # --- shape + level count ---
+   g.reset()
+   assert g.N_LEVELS == 4 and g.DRAGON_LEVEL == 3
+   assert g._get_state().shape[0] == 17, g._get_state().shape
+   # dragon channels empty on level 1
+   assert g._get_state()[14].sum()==0 and g._get_state()[15].sum()==0 and g._get_state()[16].sum()==0
+   print("4 levels, obs 17ch, dragon channels empty on melee levels  OK")
+
+   # --- reach dragon level via transitions: HP restored, only the dragon present ---
+   g.reset(); g.hp = 20
+   for _ in range(3):
+       force_win_step(g)
+   assert g.level == 3 and g.dragon_pos is not None
+   assert g.hp == g.MAX_HP, ("HP restored on boss entry", g.hp)
+   assert g.melee_poses == [] and g.guard_pos is None and g.warlock_pos is None
+   assert g.potion_pos is None, "no potion on dragon level"
+   assert len(g._dragon_tiles()) == 4
+   assert not g._all_enemies_defeated(), "exit must stay locked while dragon lives"
+   ds = g._get_state()
+   assert ds[14].sum() == 4.0, "dragon body = 4 tiles in channel"
+   print("dragon level: HP full, only the 2x2 dragon, no potion, exit locked  OK")
+
+   # --- attack pattern: leap, leap, fire(big), fire(small), repeat ---
+   g.reset(); g.level = 3; g._setup_level()
+   g.player_pos = [1, 1]
+   seq = []
+   for _ in range(6):
+       ph = g.dragon_phase
+       g._dragon_action(0, False)
+       seq.append((ph, bool(g.dragon_fire_tiles), g.dragon_fire_stage))
+   # phase0 leap(no fire), phase1 leap(no fire), phase2 fire big, phase3 fire small, phase0 clear...
+   assert seq[0][1] is False and seq[1][1] is False, seq
+   assert seq[2][1] is True and seq[2][2] == "big", seq
+   assert seq[3][1] is True and seq[3][2] == "small", seq
+   assert seq[4][1] is False, ("fire cleared on next leap", seq)
+   print("attack cycle leap/leap/fire-big/fire-small  OK:", [s[0] for s in seq])
+
+   # --- fire breaks an interior wall in its ring ---
+   g.reset(); g.level = 3; g._setup_level()
+   g.dragon_pos = [4, 4]
+   wall_tile = (3, 4)   # in the ring above the body
+   g.grid[wall_tile] = 1
+   g._dragon_ignite()
+   assert g.grid[wall_tile] == 0, "fire should smash an interior wall"
+   assert [3, 4] in g.dragon_fire_tiles
+   print("fire smashes interior walls in its ring  OK")
+
+   # --- leap breaks a wall it lands on ---
+   g.reset(); g.level = 3; g._setup_level()
+   g.dragon_pos = [4, 4]; g.player_pos = [4, 9]   # player to the right -> leap right
+   g.grid[4, 6] = 1; g.grid[5, 6] = 1             # walls where the body will land
+   g._dragon_leap(0, False)
+   assert g.dragon_pos == [4, 5]
+   assert g.grid[4, 5] == 0 and g.grid[5, 5] == 0
+   print("dragon leap toward player smashes walls it lands on  OK")
+
+   # --- player cannot walk into the dragon body ---
+   g.reset(); g.level = 3; g._setup_level()
+   g.dragon_pos = [5, 5]
+   g.grid[5, 4] = 0; g.player_pos = [5, 4]
+   before = list(g.player_pos)
+   g._move_agent(3, False)   # try to step right onto dragon tile [5,5]
+   assert g.player_pos == before, "player should be blocked by the dragon body"
+   print("dragon body blocks the player  OK")
+
+   # --- killing the dragon: one shot, big reward, exit opens ---
+   g.reset(); g.level = 3; g._setup_level()
+   g.grid[5, :] = 0; g.grid[6, :] = 0
+   g.grid[5, 0] = g.grid[5, 9] = g.grid[6, 0] = g.grid[6, 9] = 1
+   g.dragon_pos = [5, 5]; g.player_pos = [5, 3]
+   g.spike_poses = [[1,1],[1,2],[1,3]]; g.spike_statuses = [True]*3
+   o, r, term, trunc = g.step(5)   # shoot right at the dragon
+   assert g.dragon_pos is None, "dragon should die in one shot"
+   assert r >= g.REWARD_DRAGON_KILL - 1e-6, ("dragon kill reward", r)
+   assert g._all_enemies_defeated(), "exit opens once the dragon is dead"
+   assert g._get_state()[2][g.exit_pos[0], g.exit_pos[1]] == 1.0
+   print("dragon dies in one shot, big reward, exit opens  OK")
+
+   assert g._all_enemies_defeated(), "exit opens once the dragon is dead"
+   assert g._get_state()[2][g.exit_pos[0], g.exit_pos[1]] == 1.0
+   print("dragon dies in one shot, big reward, exit opens  OK")
+
+      73              if g.guard_pos is not None:
+      74                  grid_display[g.guard_pos[0]][g.guard_pos[1]] = 'G'
+      75 +            for t in g._dragon_tiles():
+      76 +                grid_display[t[0]][t[1]] = 'D'
+      77              # Drawn last so the player is never hidden under another glyph.
+      78              grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
+      79              for row in grid_display:
+
+● Now compile and run a comprehensive dragon-level test:
+
+● Bash(".venv/Scripts/python.exe" -m py_compile game_engine.py enemies.py pathfinding.py env.py evaluate.py version_utils.py 2>&1 && echo "compile OK" && \
+      cat > _dr.p…)
+  ⎿  Error: Exit code 1
+     compile OK
+     4 levels, obs 17ch, dragon channels empty on melee levels  OK
+     Traceback (most recent call last):
+       File "C:\uni\2nd_year\advanced_ai\adv_ai_group-5\_dr.py", line 35, in <module>
+         assert not g._all_enemies_defeated(), "exit must stay locked while dragon lives"
+     AssertionError: exit must stay locked while dragon lives
+
+● Caught a real bug — I forgot to add the dragon to _all_enemies_defeated(), so the exit would open on the boss level without killing the dragon. Fixing:
+
+● Update(enemies.py)
+  ⎿  Added 4 lines, removed 2 lines
+      49
+      50      def _all_enemies_defeated(self):
+      51          """True once no enemy of any kind remains and none are waiting to spawn:
+      52 -        every melee enemy killed and the reserve exhausted, the warlock dead and
+      53 -        the guard dead. This is the condition that opens the exit."""
+      52 +        every melee enemy killed and the reserve exhausted, the warlock dead, the
+      53 +        guard dead and the boss dragon dead. This is the condition that opens the
+      54 +        exit (on the dragon level, that means the dragon must be killed)."""
+      55          return (self.guard_pos is None
+      56                  and self.warlock_pos is None
+      57 +                and self.dragon_pos is None
+      58                  and self.melee_reserve == 0
+      59                  and all(m is None for m in self.melee_poses))
+      60
+
+● Bash(cat > _dr.py <<'PY'
+      import random, numpy as np…)
+  ⎿  4 levels, obs 17ch, dragon channels empty on melee levels  OK
+     dragon level: HP full, only the 2x2 dragon, no potion, exit locked  OK
+     attack cycle leap/leap/fire-big/fire-small  OK: [0, 1, 2, 3, 0, 1]
+     … +6 lines (ctrl+o to expand)
+
+● All pass. Let me run the integration checks — env/observation space, env_signature, and a headless render smoke that actually draws the dragon + fire sprites:
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+
+   cat > _smoke.py <<'PY'
+   import os, copy, threading
+   os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+   from env import GameEnv
+   from version_utils import env_signature
+   from game_engine import Game
+
+   e = GameEnv(grid_size=10)
+   print("obs space:", e.observation_space.shape, "| n_levels:", e.game.N_LEVELS)
+   sig = env_signature(e)
+   print("signature n_levels:", sig["n_levels"], "melee_per_level:", sig["melee_per_level"])
+   rc = Game.reward_coeffs()
+   print("dragon rewards/damage: kill=%s contact=%s fire=%s"
+         % (rc["dragon_kill"], rc["dragon_contact_damage"], rc["dragon_fire_damage"]))
+
+   # Build a few frames ON the dragon level (with active fire) and replay headlessly
+   # so the dragon + fire sprites get loaded and drawn.
+   import random; random.seed(1)
+   g = GameEnv(grid_size=10).game
+   g.reset(); g.level = 3; g._setup_level()
+   g.last_action = None
+   frames = [copy.deepcopy(g)]
+   for a in [0, 1, 8, 3, 7]:
+       g.step(a); g.last_action = a
+       frames.append(copy.deepcopy(g))
+   # force a fire frame so fire_big/fire_small get drawn
+   g.dragon_phase = 2; g._dragon_action(0, False); g.last_action = 0
+   frames.append(copy.deepcopy(g))
+   episodes = [{"result": "won", "frames": frames}]
+
+   g.dragon_phase = 2; g._dragon_action(0, False); g.last_action = 0
+   frames.append(copy.deepcopy(g))
+   episodes = [{"result": "won", "frames": frames}]
+
+
+● Bash(cat > _dr.py <<'PY'
+      import random, numpy as np…)
+  ⎿  4 levels, obs 17ch, dragon channels empty on melee levels  OK
+     dragon level: HP full, only the 2x2 dragon, no potion, exit locked  OK
+     attack cycle leap/leap/fire-big/fire-small  OK: [0, 1, 2, 3, 0, 1]
+     … +6 lines (ctrl+o to expand)
+
+● All pass. Let me run the integration checks — env/observation space, env_signature, and a headless render smoke that actually draws the dragon + fire sprites:
+
+● Bash(cat > _smoke.py <<'PY'
+      import os, copy, threading…)
+  ⎿  C:\uni\2nd_year\advanced_ai\adv_ai_group-5\.venv\Lib\site-packages\pygame\pkgdata.py:25: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this
+      package or pin to Setuptools<81.
+       from pkg_resources import resource_stream, resource_exists
+     … +6 lines (ctrl+o to expand)
+
+● Everything works end-to-end. The fourth level — the dragon boss — is in and verified.
+
+  Your conceptual question first
+
+  "Is wall-breaking an additional thing the agent must learn? Should the walls channel change?" — Correct on both counts, and your instinct ("the obvious change is to remove the wall") is exactly right.
+
+  - The walls channel needs no special code. It's computed as (self.grid == WALL), so when the dragon/fire smashes a wall I just set that grid cell to FLOOR, and the channel — plus the distance_map channel, which recomputes paths — updates automatically on the next observation. "Remove the wall" is the
+  whole change.
+  - It is additional dynamics the agent must adapt to. The agent doesn't break walls (the dragon does), but it now faces a non-stationary map: openings appear mid-level, shortening paths and exposing it, and fire can pour through where a wall used to be. All of it is fully observable through the walls +
+  distance + dragon/fire channels, so it's learnable rather than hidden — but yes, it's a genuinely harder thing to learn than the static maps.
+
+  What I added (and why)
+
+  Level 4 (DRAGON_LEVEL): N_LEVELS = 4. The first three stay melee levels (LEVELS); the fourth dispatches to a separate _setup_dragon_level — one 2×2 dragon, no melee/guard/warlock/potion, HP restored to full on entry (the only healing the level offers, per your req 3). The dragon must be killed for the
+  exit to open (added it to _all_enemies_defeated — this was the one bug my tests caught, where the exit opened without killing it).
+
+  The dragon (in EnemyMixin):
+  - 2×2 body tracked by a top-left dragon_pos; _dragon_tiles() gives its four cells. It's solid (the player can't walk into it) and shootable on any of its four tiles — one shot kills it.
+  - Attack cycle _dragon_action: phase 0 leap → phase 1 leap → phase 2 fire (big) → phase 3 fire (small) → repeat. Leaps move it one tile toward the player (preferring the larger axis); the fire is the 12-tile ring around the body, lasting two ticks.
+  - Wall-breaking (req 6): both leaps (_dragon_leap) and fire (_dragon_ignite) smash any interior wall they touch (WALL → FLOOR); the map border is never broken so it stays in bounds.
+  - Damage: DRAGON_CONTACT_DAMAGE = 50 if it leaps onto you, DRAGON_FIRE_DAMAGE = 50 per fire tick. Fire damage is applied only in the dragon's turn (no double-counting), once per active tick — so standing in the ring both ticks is lethal (100), but you can eat one tick and survive. Freeze charges still
+  stop the dragon (and on this level there's no warlock, so freezing is safe and rewarded — a real tactic for a free shot).
+
+  Observation: 14 → 17 channels. Added dragon (body), dragon_fire (the burning ring), and a constant dragon_phase plane (normalized 0–1). The phase plane matters: with a single frame and no frame-stacking, the agent otherwise couldn't tell a leap from an incoming fire — the phase makes the boss fair to
+  learn. All three read zero on the melee levels, so the shape is constant. (Retrain required — old checkpoints have 14 channels.)
+
+  Rendering: dragon sprite scaled to 2×2 tiles (4× area, req 4), drawn from its top-left under the player; fire_big.png on the first fire tick, fire_small.png on the second (req 5). Also added D/f to the ansi view.
+
+  Reward changes (all of them)
+
+  - New REWARD_DRAGON_KILL = 1.0 (vs the normal REWARD_KILL = 0.3). The boss is far harder to land a hit on than a regular enemy, and killing it is the gate to the run's biggest reward — a 0.3 kill would badly undersell it and make the agent prone to just avoiding the dragon. It's a one-shot kill, so this
+  fires once.
+  - No other reward formula changed. The existing chain already fits the boss: killing it triggers the REWARD_ALL_CLEARED = 0.5 milestone (exit opens), and clearing level 4 is the final level so it pays REWARD_WIN = 2.0. The dragon level has no potion, so REWARD_POTION simply never fires there.
+  - New damage constants DRAGON_CONTACT_DAMAGE / DRAGON_FIRE_DAMAGE (both 50) and all the above are logged in reward_coeffs for versioning.
+
+  Verified
+
+  4 levels / 17-channel obs; dragon channels zero on melee levels; reaching the boss restores HP to full with only the dragon present and the exit locked; the leap→leap→fire(big)→fire(small) cycle; fire and leaps smashing interior walls; the body blocking the player; one-shot kill paying the big reward and
+  opening the exit; 300 random dragon-level episodes with the observation always valid; and a headless replay that actually loads and draws the dragon + both fire sprites.
+
+  A couple of tunables I picked and you may want to revisit: contact/fire damage at 50 each (two fire ticks = death) makes the boss quite punishing, and REWARD_DRAGON_KILL = 1.0. Both are one-line changes in the constants block if you want to soften or sharpen the fight.
+
+
+
+
+● PowerShell(cd "C:\uni\2nd_year\advanced_ai\adv_ai_group-5"; & ".venv\Scripts\python.exe" _diag.py)
+  ⎿  [1] win mechanics test:
+       level 0 -> 1, reward=2.090, term=False, won=False
+       PASS
+     … +11 lines (ctrl+o to expand)
+  ⎿  (timeout 10m)
+
+● Now I have a precise diagnosis. The numbers are conclusive:
+
+  - Exit opened 94 times, but only 45% had the key in hand at that moment.
+  - When it opened, the agent had 81 of 100 steps left and was only 6.3 tiles from the exit — plenty of time and distance.
+  - Yet the closest it ever got to the exit afterward was 4.78 tiles (from 6.3). It barely moves toward the open exit.
+
+  So it's not survival, time, or distance. The agent has simply not learned to go to the exit — and there are two compounding root causes I can now name with confidence.
+
+  Let me apply one cheap, unambiguously-correct fix while I lay out the rest — make the exit channel honest about the key:
+
+● Update(game_engine.py)
+  ⎿  Added 15 lines, removed 3 lines
+      515
+      516          # setting every object's position to 1 in the respective grid
+      517          player[self.player_pos[0], self.player_pos[1]] = 1.0
+      518 -        # The exit reads 1.0 once it is open (every enemy cleared) and 0.5 while it
+      519 -        # is still locked, so the agent can see when finishing is actually possible.
+      520 -        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0 if self._all_enemies_defeated() else 0.5
+      518 +        # The exit channel encodes how close finishing actually is, monotonically,
+      519 +        # so "brighter = nearer to usable" is a clean signal to climb. The old code
+      520 +        # read 1.0 the moment every enemy died - even with no key - so it told the
+      521 +        # agent "go here, it's open" while stepping on it did nothing (the level
+      522 +        # only clears with the key AND on the exit). Now: 1.0 only when the exit is
+      523 +        # genuinely finishable this step (all enemies dead AND key in hand), 0.66
+      524 +        # when the board is clear but the key is still needed (go grab it - the
+      525 +        # distance channel already points there), 0.33 while enemies remain.
+      526 +        cleared = self._all_enemies_defeated()
+      527 +        if cleared and self.has_key:
+      528 +            exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
+      529 +        elif cleared:
+      530 +            exit_[self.exit_pos[0], self.exit_pos[1]] = 0.66
+      531 +        else:
+      532 +            exit_[self.exit_pos[0], self.exit_pos[1]] = 0.33
+      533          if self.key_pos is not None:
+      534              key[self.key_pos[0], self.key_pos[1]] = 1.0
+      535          if self.guard_pos is not None:
+
+● I've applied the honest-exit fix. Now here's the full diagnosis and the strategic call I need from you.
+
+  Why it never finishes — two root causes
+
+  1. Clearing the board has positive value; finishing a level does not (for this agent).
+
+  Look at how the step penalty changed outcomes:
+
+  ┌────────────────────────┬──────┬───────────┬─────┐
+  │                        │ lost │ truncated │ won │
+  ├────────────────────────┼──────┼───────────┼─────┤
+  │ v1 (10M, no penalty)   │ 4004 │ 5996      │ 0   │
+  ├────────────────────────┼──────┼───────────┼─────┤
+  │ v3 (1M, +step penalty) │ 5851 │ 4149      │ 0   │
+  └────────────────────────┴──────┴───────────┴─────┘
+
+  The penalty worked mechanically — it pushed ~1,850 episodes from "idle → truncate" into "progress → die." It did not produce wins. That's the tell: reaching the exit drops the agent into a harder level it cannot survive (it reaches level index 1 only 14/400 times and clears it ~0). So finishing a level
+  has negative expected value for the agent — it correctly learns to avoid the exit. Forcing it forward just converts truncations into deaths. You can't reward-tune your way out of this; the later levels have to become survivable.
+
+  2. It clears the board without the key, and the key-first detour was never learned.
+
+  55% of the time the exit opens with no key in hand. Finishing then needs a detour back to the key, then to the exit — a two-stage plan it never practiced (because the whole finish sequence is so rarely reached, the gradient never forms). I already fixed the misleading exit signal that read "open"
+  without the key.
+
+  The common thread: the full finish sequence is reached so rarely that PPO never reinforces it. Combat rewards (0.3 × ~6 kills + 0.5 cleared) are dense and reliable; the level-clear reward is sparse and gated behind a death-trap next level. The agent rationally optimizes combat-and-survive.
+
+  The fix has to make levels survivable so finishing pays off
+
+  Given that, the primary lever is yours to pick — they have real tradeoffs:
+
+● User answered Claude's questions:
+  ⎿  · The core blocker is that later levels are unsurvivable, so finishing has negative expected value. Which approach do you want me to set up to make levels clearable (so the finish behavior can actually be learned)? → what if the reward for going to the next level is too attractive? like let's say
+     it's 3 for every level or even more. do you think that will make the agent reconsider the actions?
+  ⎿  Found 1 new diagnostic issue in 1 file (ctrl+o to expand)
+
+● That's a sharp question, and your intuition is largely right — let me validate it precisely, because the answer is "yes, for what you actually want."
+
+  Will a big level-clear reward make it go to the exit? Yes.
+
+  The agent's decision at a cleared level is essentially:
+
+  go to exit:  R_clear  +  γ^k · E[value of next level]
+  don't:       ≈ 0  (idle → truncate)
+
+  Right now E[value of next level] is negative (it dies there), and R_clear = 1.0 isn't big enough to outweigh that discounted loss, so idling wins. If you make R_clear large enough to dominate the discounted next-level loss, finishing flips to positive EV and the agent will reliably clear the board, grab
+  the key, and run to the exit to collect it. With γ=0.99 and death ~20–40 steps into the next level, that discounted loss is only about −0.5 to −0.7, so a clear reward of 3.0 crushes it. Your instinct is correct.
+
+  The one caveat: this makes it reach the exit / progress — exactly your stated bar ("doesn't even have to finish; just reach it"). It will not by itself produce end-to-end wins, because winning still requires surviving all three levels. So expect: reaches the level-0 exit reliably → advances to level 1 →
+  often dies there. won may stay near 0, but the "never even tries to reach the finish" behavior should disappear, and you'll see it progressing through levels.
+
+  One ordering fix to apply alongside: REWARD_WIN must stay above REWARD_LEVEL_CLEAR, or clearing a non-final level would look better than winning. Let me set clear=3.0, win=5.0:
+
+● Update(game_engine.py)
+  ⎿  Added 12 lines, removed 2 lines
+      23      REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
+      24      REWARD_ALL_CLEARED = 0.5  # one-time per level: every enemy defeated, exit opens
+      25      REWARD_POTION = 0.3       # picking up a potion (scaled by HP actually restored)
+      26 -    REWARD_LEVEL_CLEAR = 1.0  # clearing a non-final level, then dropping into the next
+      27 -    REWARD_WIN = 2.0          # clearing the final level - the whole run is complete
+      26 +    # Deliberately large. At a cleared level the agent weighs "go to the exit"
+      27 +    # (collect this) against "idle until truncation" (~0); reaching the exit also
+      28 +    # drops it into a harder, often-lethal next level, so with a small clear reward
+      29 +    # finishing is negative expected value and the agent learns to avoid the exit
+      30 +    # entirely. Making the clear reward dominate that discounted next-level risk
+      31 +    # flips finishing back to clearly worth it, so the agent actually heads for the
+      32 +    # exit. WIN stays above LEVEL_CLEAR so winning the run is never worth less than
+      33 +    # clearing an intermediate level. (Note: this drives the agent to REACH exits /
+      34 +    # progress; surviving all the way to a win still needs the later levels to be
+      35 +    # survivable - see difficulty/curriculum.)
+      36 +    REWARD_LEVEL_CLEAR = 3.0  # clearing a non-final level, then dropping into the next
+      37 +    REWARD_WIN = 5.0          # clearing the final level - the whole run is complete
+      38      REWARD_LOSE = -1.0        # killed (HP hits 0), or grabbing the key past the guard
+      39      REWARD_HIT = -0.3         # taking non-lethal damage from an enemy
+      40      REWARD_STEP_PENALTY = 0.01  # subtracted every step: a small living cost so
+
+● Let me verify the new rewards fire correctly:
+
+● PowerShell(cd "C:\uni\2nd_year\advanced_ai\adv_ai_group-5"; & ".venv\Scripts\python.exe" -c "from game_engine import Game; g=Game(10); g.reset(); g.guard_pos=None; g.warlo…)
+  ⎿  level 0->1 reward=4.090 (expect ~3.0+ for non-final clear)
+     level_clear 3.0 win 5.0 exit_channel_max 0.33000001311302185
+  ⎿  Found 14 new diagnostic issues in 1 file (ctrl+o to expand)
+
+● Confirmed working: a non-final clear now pays 4.09 (3.0 clear + ~1.0 speed bonus + shaping − step penalty), and the exit channel reads 0.33 on the fresh locked level. The diagnostics listed are all pre-existing style/Optional noise, none from these edits.
+
+  Summary of everything changed this session
+
+  ┌───────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │                                          Change                                           │            File            │                                                          Purpose                                                           │
+  ├───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Fireball corridor → directional fade (1.0 at the fireball, decaying along travel)         │ enemies.py, game_engine.py │ Encodes direction + timing so the agent stops fearing the whole lane and will step into the safe gap to punish the warlock │
+  ├───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Step penalty 0.01/step                                                                    │ game_engine.py             │ Makes idling cost something                                                                                                │
+  ├───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ Exit channel honest about the key: 0.33 locked → 0.66 cleared-but-no-key → 1.0 finishable │ game_engine.py             │ Stops the exit reading "open" when stepping on it does nothing; monotonic "brighter = closer to usable"                    │
+  ├───────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ REWARD_LEVEL_CLEAR 1.0→3.0, REWARD_WIN 2.0→5.0                                            │ game_engine.py             │ Your idea — makes finishing dominate the negative-EV next-level risk so the agent actually heads for the exit              │
+  └───────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  What to expect after retraining
+
+  - The "never reaches the exit" behavior should go away — clearing the board, grabbing the key, and running to the exit becomes clearly worth it. That's your stated goal ("just reach it").
+  - won may still be low until the later levels are survivable. The reward change makes it want to progress; it doesn't make it able to survive level 1's gauntlet. Watch for the pattern "reaches level-0 exit reliably → dies on level 1" — that's the expected intermediate state, and it's progress.
+  - For actual end-to-end wins, the next lever is survivability (lower per-hit damage from 50, and/or a curriculum). I left difficulty untouched since you wanted to test the reward idea first.
+
+  How to confirm it worked
+
+  I left _diag.py in the repo (it's standalone, not imported by training). After your next run, point its rollout_instrumented(...) at the new zip — the numbers that matter are "...that reached the exit" (was 13%) and "avg closest it got to exit during window" (was 4.78 from 6.3). If the reward change
+  worked, conversion should jump and closest-distance should drop toward 0. Want me to fold that instrumentation into evaluate.py properly, or delete the throwaway?
+
