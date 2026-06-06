@@ -1,0 +1,25 @@
+params:
+    model = PPO("CnnPolicy",
+                env,
+                policy_kwargs=policy_kwargs,
+                n_steps=2048,
+                batch_size=256,
+                n_epochs=10,
+                learning_rate=3e-4,
+                verbose=1,
+                tensorboard_log="./tb_logs/",
+                seed=42
+            )
+
+
+    model.learn(total_timesteps=6_000_000)
+
+
+
+what is different from version 2:
+    1. adding a condition for when giving a (negative) reward w.r.t the enemy proximity - there is now a condition
+
+            if self.freeze_ticks == 0:
+                reward -= (old_enemy_dist - new_enemy_dist) * 0.05
+
+    2. timesteps: 9 mil -> 6 mil

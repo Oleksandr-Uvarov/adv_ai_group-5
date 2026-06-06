@@ -1,0 +1,19 @@
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=3e-4
+        verbose=1
+        seed=42
+
+introducing the key and the guard
+
+performance:
+
+9800 123 77

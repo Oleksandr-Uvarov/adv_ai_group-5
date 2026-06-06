@@ -1,0 +1,24 @@
+params:
+    model = PPO("CnnPolicy",
+                env,
+                policy_kwargs=policy_kwargs,
+                n_steps=2048,
+                batch_size=256,
+                n_epochs=10,
+                learning_rate=3e-4,
+                verbose=1,
+                tensorboard_log="./tb_logs/",
+                seed=42
+            )
+
+
+    model.learn(total_timesteps=6_000_000)
+
+
+
+what is different from version 3:
+     speed_bonus = max(0.0, (75 - self.steps) / 75) -> speed_bonus = max(0.0, (50 - self.steps) / 50)
+     self.step_limit = 125 -> self.step_limit = 100
+
+     timesteps: 6 mil -> 26 mil
+

@@ -1,0 +1,89 @@
+import pygame
+from pathlib import Path
+
+_SPRITES_DIR = Path(__file__).parent / "sprites"
+
+class Renderer:
+    # Sprites are 32x32 but get scaled to TILE_SIZE on load, so this is the only
+    # knob needed to change the on-screen size of everything.
+    TILE_SIZE = 64
+    SHOT_FRAME_MS = 60  # delay between projectile animation frames
+
+    def __init__(self, grid_size=10):
+        pygame.init()
+        self.grid_size = grid_size
+        size = grid_size * self.TILE_SIZE
+        self.screen = pygame.display.set_mode((size, size))
+        pygame.display.set_caption("RL Roguelike")
+        self._load_sprites()
+
+    def _load_sprites(self):
+        self.sprites = {}
+        for name in ("floor", "wall", "player", "exit", "enemy", "key",
+                     "guard", "fireball", "warlock", "warlock_fireball", "activated_spikes"):
+            img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
+            self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
+
+    def draw(self, game):
+        # Shooting is hitscan in the game logic, but for display we animate the
+        # projectile one tile per frame with everything else frozen.
+        shot = getattr(game, "last_shot", None)
+        if shot is not None and shot["path"]:
+            self._animate_shot(game, shot)
+
+        self._draw_scene(game)
+        pygame.display.flip()
+        self._pump_events()
+
+    def _animate_shot(self, game, shot):
+        hit = shot["hit"]
+        for tile in shot["path"]:
+            # The game state has already removed the killed target, so we redraw
+            # it ourselves until the projectile actually reaches its tile.
+            extra = (shot["hit_sprite"], hit) if (hit is not None and tile != hit) else None
+            self._draw_scene(game, extra=extra, fireball=tile)
+            pygame.display.flip()
+            self._pump_events()
+            pygame.time.delay(self.SHOT_FRAME_MS)
+
+    def _draw_scene(self, game, extra=None, fireball=None):
+        ts = self.TILE_SIZE
+
+        for r in range(game.grid_size):
+            for c in range(game.grid_size):
+                sprite = "wall" if game.grid[r, c] == 1 else "floor"
+                self.screen.blit(self.sprites[sprite], (c * ts, r * ts))
+
+        def blit(name, pos):
+            if pos is not None:
+                self.screen.blit(self.sprites[name], (pos[1] * ts, pos[0] * ts))
+
+        # Spikes are floor hazards, so draw them first (under the entities) — one
+        # is active per step, the rest show as deactivated.
+        for i in range(len(game.spike_poses)):
+            name = "activated_spikes" if game.spike_statuses[i] else "deactivated_spikes"
+            blit(name, game.spike_poses[i])
+
+        blit("exit", game.exit_pos)
+        blit("key", game.key_pos)
+        for enemy_pos in game.melee_poses:
+            blit("enemy", enemy_pos)
+        blit("guard", game.guard_pos)
+        blit("warlock", game.warlock_pos)
+        # The warlock's in-flight fireball (distinct from the player's shot
+        # animation, which is passed in via the `fireball` argument).
+        blit("warlock_fireball", game.warlock_fireball_pos)
+        if extra is not None:
+            blit(extra[0], extra[1])
+        blit("player", game.player_pos)
+        if fireball is not None:
+            blit("fireball", fireball)
+
+    def _pump_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.close()
+                raise SystemExit
+
+    def close(self):
+        pygame.quit()

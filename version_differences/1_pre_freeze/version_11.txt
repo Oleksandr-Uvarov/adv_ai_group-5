@@ -1,0 +1,6 @@
+what changed from version 10:
+    grid_size: 10 -> 20
+    number of steps: 20 mil -> 10 mil
+    n_steps: 2048 - 4096
+    step limit: 200 -> 500
+    learning rate: 3e-4 -> 2e-4

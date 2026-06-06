@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "recorded_at": "2026-06-05 06:45:11",
+  "timing": {
+    "started_at": "2026-06-04 23:32:10",
+    "ended_at": "2026-06-05 06:39:08",
+    "duration_seconds": 25618.86223,
+    "duration": "7h 6m 59s"
+  },
+  "git": {
+    "commit": "b2f146291d6ada82f082ae76542b9c4740c251e9",
+    "dirty": false
+  },
+  "libraries": {
+    "stable_baselines3": "2.8.0",
+    "torch": "2.12.0+cu130",
+    "gymnasium": "1.2.3",
+    "numpy": "2.4.6"
+  },
+  "training": {
+    "total_timesteps": 15000000,
+    "n_envs": 8,
+    "features_dim": 128,
+    "policy": "CnnPolicy",
+    "ppo_params": {
+      "n_steps": 2048,
+      "batch_size": 256,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "verbose": 1,
+      "seed": 42
+    }
+  },
+  "env": {
+    "obs_shape": [
+      13,
+      10,
+      10
+    ],
+    "grid_size": 10,
+    "n_melee": 2,
+    "n_guard": 1,
+    "n_warlock": 1,
+    "action_dim": 9,
+    "reward_coeffs": {
+      "goal_step": 0.1,
+      "enemy_step": 0.05,
+      "kill": 0.3,
+      "key": 0.3,
+      "freeze": 0.15,
+      "win": 1.0,
+      "lose": -1.0,
+      "hit": -0.3,
+      "shoot_range": 3,
+      "freeze_ticks": 2,
+      "hp": 100,
+      "enemy_damage": 50,
+      "guard_damage": 50,
+      "warlock_damage": 50,
+      "warlock_fireball_range": 3,
+      "n_spikes": 3,
+      "spike_damage": 34
+    }
+  },
+  "eval": {
+    "n_episodes": 10000,
+    "n_won": 5549,
+    "n_lost": 1497,
+    "n_truncated": 2954
+  },
+  "developer_comment": "make sure the warlock is now always next to the exit. make sure the warlock only shoots whenever the agent is in range (because it seems like the agent is otherwise too afraid to come in line of the fireball of the warlock). make sure guard/warlock/spikes never overlap."
+}

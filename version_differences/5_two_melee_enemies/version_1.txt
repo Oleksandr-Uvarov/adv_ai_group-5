@@ -1,0 +1,32 @@
+What changed from the previous version:
+    training.total_timesteps: 1000 -> 10000000
+
+Developer comment: First train of a model with two melee enemies after adjusting the logic a bit - now both melee enemies are captured using one observation channel.
+
+version recorded:
+obs_shape: (9, 10, 10)   grid_size: 10
+enemies: 2 melee, 1 guard   action_dim: 8
+reward coeffs: goal 0.1, enemy 0.05, kill 0.3, freeze 0.15
+
+training: total_timesteps=10000000   n_envs=8
+duration: 6h 19m 5s   (started 2026-06-03 21:49:46, ended 2026-06-04 04:08:51)
+git: c19354569c   recorded: 2026-06-04 04:08:51
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
+
+
+
+Post-training remark:
