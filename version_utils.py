@@ -136,8 +136,24 @@ def _format_eval(ev):
     n = ev.get("n_episodes", 0)
     won, lost, trunc = ev.get("n_won", 0), ev.get("n_lost", 0), ev.get("n_truncated", 0)
     pct = lambda k: f"{k / n * 100:.1f}%" if n else "n/a"
-    return (f"    episodes={n}   won={won} ({pct(won)})   "
-            f"lost={lost} ({pct(lost)})   truncated={trunc} ({pct(trunc)})")
+    lines = [f"    episodes={n}   won={won} ({pct(won)})   "
+             f"lost={lost} ({pct(lost)})   truncated={trunc} ({pct(trunc)})"]
+    # Progress breakdown from the diagnostic rollout (evaluate._rollout_stats).
+    # Guarded with .get so older records that predate these fields still render.
+    mlc = ev.get("max_level_counts")
+    if mlc is not None:
+        reached = "   ".join(f"L{i + 1}={c} ({pct(c)})" for i, c in enumerate(mlc))
+        lines.append(f"    max level reached: {reached}")
+    if "n_board_cleared" in ev:
+        bc = ev["n_board_cleared"]
+        lines.append(f"    emptied the board: {bc} ({pct(bc)})")
+    if "n_key_picked" in ev:
+        kp = ev["n_key_picked"]
+        lines.append(f"    picked up the key: {kp} ({pct(kp)})")
+    if "n_refused_exit" in ev:
+        re_ = ev["n_refused_exit"]
+        lines.append(f"    truncated board-clear+key (refused exit): {re_} ({pct(re_)})")
+    return "\n".join(lines)
 
 
 def _format_txt(record, diff_block):

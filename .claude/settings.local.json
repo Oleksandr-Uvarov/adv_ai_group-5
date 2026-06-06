@@ -16,7 +16,14 @@
       "Bash(SDL_VIDEODRIVER=dummy python -c ' *)",
       "Bash(.venv/Scripts/python.exe *)",
       "Bash(Select-String -NotMatch \"UserWarning|pkg_resources|Hello from|pygame 2\")",
-      "PowerShell(.venv/Scripts/python.exe -c \"import evaluate; from env import GameEnv; env=GameEnv\\(grid_size=10\\); m=evaluate.load_model\\('version_history/7_spikes/zips/7_spikes_ppo_1.zip', env\\); eps=evaluate.record_episodes\\(m, env, 3\\); env.close\\(\\); print\\('RESULTS', [e['result'] for e in eps]\\); print\\('frames in ep0:', len\\(eps[0]['frames']\\)\\)\")"
+      "PowerShell(.venv/Scripts/python.exe -c \"import evaluate; from env import GameEnv; env=GameEnv\\(grid_size=10\\); m=evaluate.load_model\\('version_history/7_spikes/zips/7_spikes_ppo_1.zip', env\\); eps=evaluate.record_episodes\\(m, env, 3\\); env.close\\(\\); print\\('RESULTS', [e['result'] for e in eps]\\); print\\('frames in ep0:', len\\(eps[0]['frames']\\)\\)\")",
+      "Bash(cd /mnt/c/uni/2nd_year/advanced_ai/adv_ai_group-5)",
+      "Bash(echo '=== __TRACKED_VAR__ ===')",
+      "Bash(python3 -c 'import json,sys; d=json.load\\(open\\('\\\\''__TRACKED_VAR__'\\\\''\\)\\); print\\('\\\\''timesteps'\\\\'',d['\\\\''training'\\\\'']['\\\\''total_timesteps'\\\\'']\\); print\\('\\\\''eval'\\\\'',d['\\\\''eval'\\\\'']\\); print\\('\\\\''levels'\\\\'',d['\\\\''env'\\\\''].get\\('\\\\''melee_per_level'\\\\''\\)\\); print\\('\\\\''comment'\\\\'',d.get\\('\\\\''developer_comment'\\\\'','\\\\'''\\\\''\\)\\); rc=d['\\\\''env'\\\\'']['\\\\''reward_coeffs'\\\\'']; print\\('\\\\''dmg melee/guard/warlock/spike'\\\\'',rc['\\\\''enemy_damage'\\\\''],rc['\\\\''guard_damage'\\\\''],rc['\\\\''warlock_damage'\\\\''],rc['\\\\''spike_damage'\\\\'']\\); print\\('\\\\''level_clear/win/lose/hit'\\\\'',rc['\\\\''level_clear'\\\\''],rc['\\\\''win'\\\\''],rc['\\\\''lose'\\\\''],rc['\\\\''hit'\\\\'']\\)')",
+      "PowerShell($py = if \\(Test-Path \".venv\\\\Scripts\\\\python.exe\"\\) { \".venv\\\\Scripts\\\\python.exe\" } else { \"python\" }; & $py -c \"from evaluate import diagnose; diagnose\\('version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_4_20260606-134525-e8fa3c.zip', n_episodes=400\\)\")",
+      "PowerShell($py = if \\(Test-Path \".venv\\\\Scripts\\\\python.exe\"\\) { \".venv\\\\Scripts\\\\python.exe\" } else { \"python\" }; & $py _smoke.py)",
+      "PowerShell(\"== version_history ==\"; Get-ChildItem version_history -Recurse -Depth 2 -Name | Select-Object -First 25; \"== version_differences ==\"; Get-ChildItem version_differences -Name; \"== pg top of files ==\")",
+      "PowerShell($py = if \\(Test-Path \".venv\\\\Scripts\\\\python.exe\"\\) { \".venv\\\\Scripts\\\\python.exe\" } else { \"python\" }; & $py _vtest.py)"
     ]
   }
 }

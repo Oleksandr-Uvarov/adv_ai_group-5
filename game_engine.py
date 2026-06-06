@@ -5,6 +5,7 @@ from pathfinding import (
     FLOOR, WALL, floor_cells, wall_neighbor_count, adjacent_floor_pos,
     is_reachable, is_reachable_avoiding, is_reachable_unidirectional,
     is_reachable_unidirectional_any, bfs_distance, distance_map,
+    distance_map_multi,
 )
 from enemies import EnemyMixin
 
@@ -18,6 +19,17 @@ class Game(EnemyMixin):
     # exact values used can be logged with every trained version (see
     # version_utils.env_signature / reward_coeffs).
     REWARD_GOAL_STEP = 0.1    # per-tile progress toward the current goal
+    # Per-tile progress toward the NEAREST living enemy, paid only while the board
+    # is not yet clear. The exit is gated on every enemy being dead
+    # (_all_enemies_defeated), but the only spatial gradient the agent gets
+    # (distance_map / REWARD_GOAL_STEP) points at the key and the exit - nothing
+    # pulls it toward the enemies it must kill first, so hunting the guard and the
+    # kiting warlock is left to blind exploration and almost never happens (the
+    # board is cleared in well under a fifth of episodes). This is the missing
+    # "go and fight" gradient; kept below REWARD_GOAL_STEP so once the board is
+    # clear (this term switches off) navigating to the exit still dominates. Set
+    # to 0.0 to disable.
+    REWARD_ENEMY_STEP = 0.05
     REWARD_KILL = 0.3         # shooting an enemy (melee, guard or warlock)
     REWARD_KEY = 0.3          # picking up the key
     REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
@@ -54,11 +66,19 @@ class Game(EnemyMixin):
     N_SPIKES = 3
 
     # Roguelike levels played back-to-back inside one episode, as
-    # (total_melee, max_active_melee) pairs: of `total_melee` enemies only
-    # `max_active_melee` are on the board at once, the rest spawn in as they die.
+    # (total_melee, max_active_melee, has_warlock) triples: of `total_melee`
+    # enemies only `max_active_melee` are on the board at once, the rest spawn in
+    # as they die, and `has_warlock` says whether this level also fields a warlock.
     # HP and freeze charges carry across levels; clearing the last level wins the
-    # run. The warlock/guard (one each) are unchanged per level.
-    LEVELS = [(4, 2), (5, 2), (7, 3)]
+    # run. There is one guard per level throughout.
+    #
+    # The triples form a difficulty curriculum so the agent can actually get a
+    # first clear and bootstrap from it (a single level of melee+guard+warlock
+    # learned fine in earlier versions; stacking three such levels did not, and
+    # the agent never cleared even level 1 - see the diagnostics). Level 1 drops
+    # the warlock (melee + guard only), level 2 adds the warlock back, level 3
+    # keeps the warlock and adds more melee.
+    LEVELS = [(4, 2, False), (5, 2, True), (7, 3, True)]
     N_LEVELS = len(LEVELS)
 
     @classmethod
@@ -66,6 +86,7 @@ class Game(EnemyMixin):
         """Reward coefficients as a plain dict, for logging/versioning."""
         return {
             "goal_step": cls.REWARD_GOAL_STEP,
+            "enemy_step": cls.REWARD_ENEMY_STEP,
             "kill": cls.REWARD_KILL,
             "key": cls.REWARD_KEY,
             "freeze": cls.REWARD_FREEZE,
@@ -116,7 +137,7 @@ class Game(EnemyMixin):
         first (the player arrives there with carried-over HP). HP, freeze charges,
         the level index and the won/done flags are NOT reset here so they persist
         across levels."""
-        total_melee, self.max_active_melee = self.LEVELS[self.level]
+        total_melee, self.max_active_melee, has_warlock = self.LEVELS[self.level]
         # Simple map: walls on border, floor inside
         while True:
             # Initializing an empty grid
@@ -134,13 +155,14 @@ class Game(EnemyMixin):
                     if random.random() < 0.2:
                         self.grid[r, c] = WALL
 
-            # Directly sample the cells for the player, exit, key, warlock and the
-            # max-active melee enemies on the board at the start, then seat the
-            # guard next to the key and drop the spikes on the remaining floor.
-            # Every later placement avoids the cells already taken, so no two
-            # entities ever share a tile. We need those sampled cells plus one
-            # free cell per spike.
-            n_sampled = 4 + self.max_active_melee  # player, exit, key, warlock + melee
+            # Directly sample the cells for the player, exit, key, the warlock
+            # (only on levels that field one) and the max-active melee enemies on
+            # the board at the start, then seat the guard next to the key and drop
+            # the spikes on the remaining floor. Every later placement avoids the
+            # cells already taken, so no two entities ever share a tile. We need
+            # those sampled cells plus one free cell per spike.
+            n_warlock = 1 if has_warlock else 0
+            n_sampled = 3 + n_warlock + self.max_active_melee  # player, exit, key (+warlock) + melee
             cells = floor_cells(self.grid)
             if len(cells) < n_sampled + self.N_SPIKES:
                 continue
@@ -149,8 +171,12 @@ class Game(EnemyMixin):
             self.player_pos  = list(positions[0])
             self.exit_pos    = list(positions[1])
             self.key_pos     = list(positions[2])
-            self.warlock_pos = list(positions[3])
-            self.melee_poses = [list(p) for p in positions[4:]]
+            # On a warlock-free level (the first one in the curriculum) the slot
+            # is simply absent: warlock_pos is None and stays None, which already
+            # reads correctly everywhere (no warlock channel/fireball, the freeze
+            # is safe, and _all_enemies_defeated ignores it).
+            self.warlock_pos = list(positions[3]) if has_warlock else None
+            self.melee_poses = [list(p) for p in positions[3 + n_warlock:]]
             # The remaining enemies wait off-board and spawn in as the active ones
             # are killed (see EnemyMixin._respawn_melee).
             self.melee_reserve = total_melee - self.max_active_melee
@@ -217,15 +243,17 @@ class Game(EnemyMixin):
             # None (adjacent_floor_pos returns None when the key is walled in on
             # every side, and the check would crash on tuple(None)). The guard
             # needs the key-aware unidirectional check (killable without stepping
-            # onto the key, which would wake it). The warlock only needs plain
-            # reachability. Finally, the key and exit must each be reachable along
-            # a route that never steps on a spike - the spikes must never wall off
-            # an objective.
+            # onto the key, which would wake it). The warlock, when this level has
+            # one, only needs plain reachability (it is None on warlock-free
+            # levels, so that clause is simply skipped). Finally, the key and exit
+            # must each be reachable along a route that never steps on a spike -
+            # the spikes must never wall off an objective.
             spikes_set = {tuple(s) for s in self.spike_poses}
             if (self.guard_pos is not None
                     and is_reachable(self.grid, self.player_pos, self.exit_pos)
                     and is_reachable(self.grid, self.player_pos, self.key_pos)
-                    and is_reachable(self.grid, self.player_pos, self.warlock_pos)
+                    and (self.warlock_pos is None
+                         or is_reachable(self.grid, self.player_pos, self.warlock_pos))
                     and is_reachable_unidirectional_any(
                         self.grid, self.player_pos, self.guard_pos, forbidden=self.key_pos)
                     and is_reachable_avoiding(self.grid, self.player_pos, self.key_pos, spikes_set)
@@ -240,6 +268,7 @@ class Game(EnemyMixin):
         else:
             goal_pos = self.key_pos
 
+        start_pos = list(self.player_pos)
         old_goal_dist = bfs_distance(self.grid, self.player_pos, goal_pos)
         # Movement deltas
         deltas = {0: (-1, 0), 1: (1, 0), 2: (0, -1), 3: (0, 1)}
@@ -256,6 +285,22 @@ class Game(EnemyMixin):
         # if old exit distance is greater than new exit distance,
         # then reward is positive.
         reward = (old_goal_dist - new_goal_dist) * self.REWARD_GOAL_STEP
+
+        # Combat shaping: while enemies remain, also reward closing the gap to the
+        # nearest living enemy, the spatial pull toward the fight that goal_step
+        # (which only points at the key/exit) does not provide. Measured over the
+        # same enemy snapshot before and after this move - a move action never
+        # kills or moves an enemy (those happen later in step()), so this is a
+        # clean per-tile potential and never accidentally rewards/punishes a kill.
+        # Switches itself off once the board is clear, handing navigation back to
+        # goal_step with no conflicting gradient.
+        if not self._all_enemies_defeated():
+            old_enemy_dist = self._nearest_enemy_distance(start_pos)
+            new_enemy_dist = self._nearest_enemy_distance(self.player_pos)
+            if (old_enemy_dist is not None and new_enemy_dist is not None
+                    and old_enemy_dist != float("inf")
+                    and new_enemy_dist != float("inf")):
+                reward += (old_enemy_dist - new_enemy_dist) * self.REWARD_ENEMY_STEP
 
         # Potion pickup: heal up to MAX_HP. The reward is scaled by the HP
         # actually restored, so grabbing a potion at (or near) full health is
@@ -279,6 +324,25 @@ class Game(EnemyMixin):
         # here: the exit only opens once every enemy is dead, so it is evaluated in
         # step() after combat resolves (see the _all_enemies_defeated check).
         return reward, terminated
+
+    def _living_enemy_positions(self):
+        """Every living enemy's ``[row, col]`` - melee, guard and (when present)
+        the warlock. Shared by the enemy-approach reward shaping and the nearest-
+        enemy observation channel so both see exactly the same set."""
+        enemies = [m for m in self.melee_poses if m is not None]
+        if self.guard_pos is not None:
+            enemies.append(self.guard_pos)
+        if self.warlock_pos is not None:
+            enemies.append(self.warlock_pos)
+        return enemies
+
+    def _nearest_enemy_distance(self, pos):
+        """BFS distance from ``pos`` to the closest living enemy, or None if no
+        enemy is left (or none is reachable). Used only for the combat shaping in
+        _move_agent."""
+        dists = [bfs_distance(self.grid, pos, e) for e in self._living_enemy_positions()]
+        dists = [d for d in dists if d != float("inf")]
+        return min(dists) if dists else None
 
     def _check_for_spikes(self):
         reward, terminated = 0, False
@@ -562,7 +626,16 @@ class Game(EnemyMixin):
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 
+        # Nearest-living-enemy distance field: the same "brighter = closer" signal
+        # distance_map gives for the goal, but pointed at whichever enemy is
+        # closest (multi-source BFS over melee + guard + warlock). It is the
+        # observation counterpart to the enemy-approach reward shaping - it tells
+        # the agent where the fight it has to win actually is. All-1.0 once the
+        # board is clear (no enemies left to approach).
+        enemy_dist = distance_map_multi(self.grid, self._living_enemy_positions())
+
         return np.stack([walls, player, exit_, freeze,
                          freeze_status, distance_map(self.grid, goal), key,
-                         guard, melee, warlock, warlock_fireball, hp, spikes, potion],
+                         guard, melee, warlock, warlock_fireball, hp, spikes,
+                         potion, enemy_dist],
                         axis=0)

@@ -1,0 +1,37 @@
+What changed from the previous version:
+    env.reward_coeffs.enemy_damage: 50 -> 25
+    env.reward_coeffs.guard_damage: 50 -> 25
+    env.reward_coeffs.level_clear: 1.0 -> 3.0
+    env.reward_coeffs.spike_damage: 34 -> 25
+    env.reward_coeffs.warlock_damage: 50 -> 25
+    env.reward_coeffs.win: 2.0 -> 5.0
+    training.total_timesteps: 1000000 -> 500000
+
+Developer comment: lower the damage and increase the rewards for completing the levels so that the agent is compelled more to go to the next level
+
+version recorded:
+obs_shape: (14, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 1  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=500000   n_envs=8
+duration: 0h 17m 32s   (started 2026-06-06 13:45:28, ended 2026-06-06 14:03:00)
+git: 0a14fc8b30   recorded: 2026-06-06 14:12:52
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=0 (0.0%)   lost=4136 (41.4%)   truncated=5864 (58.6%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42

@@ -35,7 +35,9 @@ def wall_neighbor_count(grid, cell):
 def adjacent_floor_pos(grid, anchor, occupied=()):
     """First floor cell orthogonally adjacent to ``anchor`` that is not already
     taken, returned as a ``[row, col]`` list, or None if every side is a wall or
-    occupied. ``occupied`` is a container of ``(row, col)`` tuples."""
+    occupied. ``occupied`` is a container of ``(row, col)`` tuples. The purpose of this method
+    is to place a warlock next to the key with an option to add the same kind of logic to other
+    entities."""
     r, c = anchor
     for dr, dc in _DIRS:
         nr, nc = r + dr, c + dc
@@ -188,6 +190,41 @@ def distance_map(grid, goal):
     goal = tuple(goal)
     queue = deque([goal])
     dist[goal[0], goal[1]] = 0.0
+
+    while queue:
+        r, c = queue.popleft()
+        for dr, dc in _DIRS:
+            nr, nc = r + dr, c + dc
+            if dist[nr, nc] < 0 and grid[nr, nc] != WALL:
+                dist[nr, nc] = dist[r, c] + 1
+                queue.append((nr, nc))
+
+    unreachable = dist < 0
+    max_d = dist.max()
+    if max_d > 0:
+        dist = dist / max_d
+    dist[unreachable] = 1.0
+    return dist
+
+
+def distance_map_multi(grid, goals):
+    """Like :func:`distance_map`, but the distance to the NEAREST of several
+    goals: a single multi-source BFS seeded from every cell in ``goals`` at once,
+    so each floor cell gets its (normalised) distance to whichever goal is
+    closest. ``goals`` is an iterable of ``(row, col)``. With one goal it is
+    identical to :func:`distance_map`; with none it returns an all-1.0 map (there
+    is nothing to approach, so every tile reads "infinitely far"). Used for the
+    observation's "nearest living enemy" channel - the spatial counterpart to the
+    enemy-approach reward shaping in Game._move_agent."""
+    dist = np.full(grid.shape, -1.0, dtype=np.float32)
+    queue = deque()
+    for g in goals:
+        gr, gc = int(g[0]), int(g[1])
+        if dist[gr, gc] < 0:
+            dist[gr, gc] = 0.0
+            queue.append((gr, gc))
+    if not queue:
+        return np.ones(grid.shape, dtype=np.float32)
 
     while queue:
         r, c = queue.popleft()

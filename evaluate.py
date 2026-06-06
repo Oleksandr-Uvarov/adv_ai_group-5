@@ -46,38 +46,115 @@ def classify_episode(game, truncated):
     return "lost"
 
 
-def evaluate(model_path, n_episodes=10000, pygame_overview=False, grid_size=10):
-    """Run a trained model headlessly for ``n_episodes`` and tally the outcomes.
+def _rollout_stats(model, env, n_episodes):
+    """Run ``n_episodes`` headless and collect, in a SINGLE pass, both the outcome
+    tally and the progress breakdown. Returns the dict that becomes a version
+    record's ``eval`` block (so every trained version logs not just win/lose/trunc
+    but WHERE the agent stalls). The progress fields exist because the bare tally
+    can't tell "never clears level 1's enemies" from "clears the board but refuses
+    the exit" - two problems with completely different fixes:
 
-    Returns ``{"n_episodes", "n_won", "n_lost", "n_truncated"}``, the shape
-    ``version_utils.write_version_file`` expects for its ``eval_results``. This is
-    the function train.py / modal_train.py call right after training; it does no
-    rendering (``pygame_overview`` is accepted for backwards compatibility but the
-    tally is always headless - use ``main()`` to actually watch episodes)."""
-    env = GameEnv(grid_size=grid_size, render_mode=None)
-    model = load_model(model_path, env)
+    - ``max_level_counts[i]`` - episodes whose furthest level was index ``i``.
+      Level ``k`` is only entered by clearing level ``k-1``, so this IS the
+      per-level clear rate (anything past index 0 means level 1 was cleared).
+    - ``n_board_cleared`` / ``n_key_picked`` - episodes that emptied the board /
+      held the key at least once.
+    - ``n_refused_exit`` - truncated while standing on a finishable state (board
+      clear AND key in hand): the only true "afraid of the exit" case; other
+      truncations never got that far.
+    """
+    g = env.game
+    n_levels = g.N_LEVELS
 
     counts = {"won": 0, "lost": 0, "truncated": 0}
+    max_level_counts = [0] * n_levels
+    n_board_cleared = 0
+    n_key_picked = 0
+    n_refused_exit = 0
+
     for _ in range(n_episodes):
         obs, _ = env.reset()
+        ep_max_level = 0
+        ep_cleared = False
+        ep_key = False
         result = "truncated"
         # An episode now spans up to N_LEVELS levels, each with its own step
         # budget, so allow that many steps before giving up on the episode.
-        for _ in range(env.game.step_limit * env.game.N_LEVELS):
+        for _ in range(g.step_limit * n_levels):
             action, _ = model.predict(obs, deterministic=True)
             obs, _, done, truncated, _ = env.step(action)
+            ep_max_level = max(ep_max_level, g.level)
+            if g._all_enemies_defeated():
+                ep_cleared = True
+            if g.has_key:
+                ep_key = True
             if done or truncated:
-                result = classify_episode(env.game, truncated)
+                result = classify_episode(g, truncated)
+                if result == "truncated" and g._all_enemies_defeated() and g.has_key:
+                    n_refused_exit += 1
                 break
         counts[result] += 1
-    env.close()
+        max_level_counts[min(ep_max_level, n_levels - 1)] += 1
+        n_board_cleared += ep_cleared
+        n_key_picked += ep_key
 
     return {
         "n_episodes": n_episodes,
         "n_won": counts["won"],
         "n_lost": counts["lost"],
         "n_truncated": counts["truncated"],
+        "max_level_counts": max_level_counts,
+        "n_board_cleared": n_board_cleared,
+        "n_key_picked": n_key_picked,
+        "n_refused_exit": n_refused_exit,
     }
+
+
+def evaluate(model_path, n_episodes=10000, pygame_overview=False, grid_size=10):
+    """Run a trained model headlessly for ``n_episodes`` and return the outcome
+    tally plus the progress breakdown (see :func:`_rollout_stats` for the keys).
+
+    This is the function train.py / modal_train.py call right after training; the
+    returned dict is handed straight to ``version_utils.write_version_file`` as
+    ``eval_results`` and stored in the version record. No rendering
+    (``pygame_overview`` is accepted for backwards compatibility but ignored -
+    use ``main()`` to actually watch episodes)."""
+    env = GameEnv(grid_size=grid_size, render_mode=None)
+    model = load_model(model_path, env)
+    stats = _rollout_stats(model, env, n_episodes)
+    env.close()
+    return stats
+
+
+def _print_diagnostics(stats, label=""):
+    """Pretty-print the breakdown from :func:`_rollout_stats`."""
+    n = stats["n_episodes"]
+    pct = lambda x: f"{x} ({100 * x / n:.1f}%)" if n else f"{x}"
+    header = f"\nDiagnostics over {n} episodes"
+    print(f"{header} ({label}):" if label else f"{header}:")
+    print("  outcomes:")
+    for key, name in (("n_won", "won"), ("n_lost", "lost"), ("n_truncated", "truncated")):
+        print(f"    {name:10s} {pct(stats[key])}")
+    print("  max level reached (level k entered <=> level k-1 cleared):")
+    for i, c in enumerate(stats["max_level_counts"]):
+        print(f"    level {i + 1:>2}  {pct(c)}")
+    print("  skill checkpoints (at least once in the episode):")
+    print(f"    emptied the board   {pct(stats['n_board_cleared'])}")
+    print(f"    picked up the key   {pct(stats['n_key_picked'])}")
+    print("  of truncated episodes, ended board-clear WITH key "
+          f"(true 'refused the exit'): {pct(stats['n_refused_exit'])}")
+
+
+def diagnose(model_path, n_episodes=2000, grid_size=10):
+    """Headless run that reports WHERE the agent stalls, not just win/lose/trunc,
+    and prints it. Returns the same stats dict that :func:`evaluate` logs into the
+    version record, so this is just the interactive view of those numbers."""
+    env = GameEnv(grid_size=grid_size, render_mode=None)
+    model = load_model(model_path, env)
+    stats = _rollout_stats(model, env, n_episodes)
+    env.close()
+    _print_diagnostics(stats, model_path)
+    return stats
 
 
 def record_episodes(model, env, n_episodes):
@@ -404,4 +481,17 @@ def main(model_path, n_episodes=30, grid_size=10):
 
 
 if __name__ == "__main__":
-    main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_3_20260606-111428-873708.zip", n_episodes=30)
+    import sys
+
+    V4_ZIP = ("version_history/9_levels_and_potion/zips/"
+              "9_levels_and_potion_ppo_4_20260606-134525-e8fa3c.zip")
+    # `python evaluate.py diagnose [model.zip]` -> headless progress breakdown
+    # (where it stalls). The model must match the CURRENT env's observation
+    # channels, so once the obs shape changes (e.g. the new nearest-enemy
+    # channel) the old v4 zip no longer loads here - pass a freshly trained zip.
+    # No arg -> the existing record + watch flow.
+    if len(sys.argv) > 1 and sys.argv[1] == "diagnose":
+        model_path = sys.argv[2] if len(sys.argv) > 2 else V4_ZIP
+        diagnose(model_path, n_episodes=2000)
+    else:
+        main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_1_20260606-010948-aa8349.zip", n_episodes=30)

@@ -1,0 +1,108 @@
+{
+  "version": 4,
+  "run_tag": "20260606-134525-e8fa3c",
+  "recorded_at": "2026-06-06 14:12:52",
+  "timing": {
+    "started_at": "2026-06-06 13:45:28",
+    "ended_at": "2026-06-06 14:03:00",
+    "duration_seconds": 1052.213793,
+    "duration": "0h 17m 32s"
+  },
+  "git": {
+    "commit": "0a14fc8b30bc3619b7e34e61af6334b558b8ee4f",
+    "dirty": false
+  },
+  "libraries": {
+    "stable_baselines3": "2.8.0",
+    "torch": "2.12.0+cu130",
+    "gymnasium": "1.2.3",
+    "numpy": "2.4.6"
+  },
+  "training": {
+    "total_timesteps": 500000,
+    "n_envs": 8,
+    "features_dim": 128,
+    "policy": "CnnPolicy",
+    "ppo_params": {
+      "n_steps": 2048,
+      "batch_size": 256,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "verbose": 1,
+      "seed": 42
+    }
+  },
+  "env": {
+    "obs_shape": [
+      14,
+      10,
+      10
+    ],
+    "grid_size": 10,
+    "n_melee": 2,
+    "n_levels": 3,
+    "melee_per_level": [
+      [
+        4,
+        2
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        7,
+        3
+      ]
+    ],
+    "n_guard": 1,
+    "n_warlock": 1,
+    "action_dim": 9,
+    "reward_coeffs": {
+      "goal_step": 0.1,
+      "kill": 0.3,
+      "key": 0.3,
+      "freeze": 0.3,
+      "all_cleared": 0.5,
+      "potion": 0.3,
+      "level_clear": 3.0,
+      "win": 5.0,
+      "lose": -1.0,
+      "hit": -0.3,
+      "step_penalty": 0.01,
+      "shoot_range": 3,
+      "freeze_ticks": 2,
+      "freeze_charges": 2,
+      "hp": 100,
+      "potion_heal": 50,
+      "enemy_damage": 25,
+      "guard_damage": 25,
+      "warlock_damage": 25,
+      "warlock_fireball_range": 3,
+      "n_spikes": 3,
+      "spike_damage": 25,
+      "n_levels": 3,
+      "levels": [
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          7,
+          3
+        ]
+      ]
+    }
+  },
+  "eval": {
+    "n_episodes": 10000,
+    "n_won": 0,
+    "n_lost": 4136,
+    "n_truncated": 5864
+  },
+  "developer_comment": "lower the damage and increase the rewards for completing the levels so that the agent is compelled more to go to the next level"
+}
