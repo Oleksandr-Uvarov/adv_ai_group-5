@@ -42,11 +42,11 @@ class Game(EnemyMixin):
 
     MAX_HP = 100
     POTION_HEAL = 50
-    MELEE_ENEMY_DAMAGE = 50
-    GUARD_DAMAGE = 50
-    WARLOCK_DAMAGE = 50
+    MELEE_ENEMY_DAMAGE = 25
+    GUARD_DAMAGE = 25
+    WARLOCK_DAMAGE = 25
     WARLOCK_FIREBALL_RANGE = 3
-    SPIKE_DAMAGE = 34
+    SPIKE_DAMAGE = 25
 
     FREEZE_TICKS = 2          # how long a single freeze lasts
     FREEZE_CHARGES = 2        # freezes available per run (NOT refilled between levels)
