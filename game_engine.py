@@ -23,8 +23,18 @@ class Game(EnemyMixin):
     REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
     REWARD_ALL_CLEARED = 0.5  # one-time per level: every enemy defeated, exit opens
     REWARD_POTION = 0.3       # picking up a potion (scaled by HP actually restored)
-    REWARD_LEVEL_CLEAR = 1.0  # clearing a non-final level, then dropping into the next
-    REWARD_WIN = 2.0          # clearing the final level - the whole run is complete
+    # Deliberately large. At a cleared level the agent weighs "go to the exit"
+    # (collect this) against "idle until truncation" (~0); reaching the exit also
+    # drops it into a harder, often-lethal next level, so with a small clear reward
+    # finishing is negative expected value and the agent learns to avoid the exit
+    # entirely. Making the clear reward dominate that discounted next-level risk
+    # flips finishing back to clearly worth it, so the agent actually heads for the
+    # exit. WIN stays above LEVEL_CLEAR so winning the run is never worth less than
+    # clearing an intermediate level. (Note: this drives the agent to REACH exits /
+    # progress; surviving all the way to a win still needs the later levels to be
+    # survivable - see difficulty/curriculum.)
+    REWARD_LEVEL_CLEAR = 3.0  # clearing a non-final level, then dropping into the next
+    REWARD_WIN = 5.0          # clearing the final level - the whole run is complete
     REWARD_LOSE = -1.0        # killed (HP hits 0), or grabbing the key past the guard
     REWARD_HIT = -0.3         # taking non-lethal damage from an enemy
     REWARD_STEP_PENALTY = 0.01  # subtracted every step: a small living cost so
@@ -515,9 +525,21 @@ class Game(EnemyMixin):
 
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
-        # The exit reads 1.0 once it is open (every enemy cleared) and 0.5 while it
-        # is still locked, so the agent can see when finishing is actually possible.
-        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0 if self._all_enemies_defeated() else 0.5
+        # The exit channel encodes how close finishing actually is, monotonically,
+        # so "brighter = nearer to usable" is a clean signal to climb. The old code
+        # read 1.0 the moment every enemy died - even with no key - so it told the
+        # agent "go here, it's open" while stepping on it did nothing (the level
+        # only clears with the key AND on the exit). Now: 1.0 only when the exit is
+        # genuinely finishable this step (all enemies dead AND key in hand), 0.66
+        # when the board is clear but the key is still needed (go grab it - the
+        # distance channel already points there), 0.33 while enemies remain.
+        cleared = self._all_enemies_defeated()
+        if cleared and self.has_key:
+            exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
+        elif cleared:
+            exit_[self.exit_pos[0], self.exit_pos[1]] = 0.66
+        else:
+            exit_[self.exit_pos[0], self.exit_pos[1]] = 0.33
         if self.key_pos is not None:
             key[self.key_pos[0], self.key_pos[1]] = 1.0
         if self.guard_pos is not None:

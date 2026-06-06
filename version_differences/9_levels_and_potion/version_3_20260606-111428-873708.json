@@ -1,0 +1,108 @@
+{
+  "version": 3,
+  "run_tag": "20260606-111428-873708",
+  "recorded_at": "2026-06-06 12:16:49",
+  "timing": {
+    "started_at": "2026-06-06 11:14:33",
+    "ended_at": "2026-06-06 12:06:26",
+    "duration_seconds": 3113.192029,
+    "duration": "0h 51m 53s"
+  },
+  "git": {
+    "commit": "074940ac439cd701770e746dbf3c775d7f8b24b0",
+    "dirty": false
+  },
+  "libraries": {
+    "stable_baselines3": "2.8.0",
+    "torch": "2.12.0+cu130",
+    "gymnasium": "1.2.3",
+    "numpy": "2.4.6"
+  },
+  "training": {
+    "total_timesteps": 1000000,
+    "n_envs": 8,
+    "features_dim": 128,
+    "policy": "CnnPolicy",
+    "ppo_params": {
+      "n_steps": 2048,
+      "batch_size": 256,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "verbose": 1,
+      "seed": 42
+    }
+  },
+  "env": {
+    "obs_shape": [
+      14,
+      10,
+      10
+    ],
+    "grid_size": 10,
+    "n_melee": 2,
+    "n_levels": 3,
+    "melee_per_level": [
+      [
+        4,
+        2
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        7,
+        3
+      ]
+    ],
+    "n_guard": 1,
+    "n_warlock": 1,
+    "action_dim": 9,
+    "reward_coeffs": {
+      "goal_step": 0.1,
+      "kill": 0.3,
+      "key": 0.3,
+      "freeze": 0.3,
+      "all_cleared": 0.5,
+      "potion": 0.3,
+      "level_clear": 1.0,
+      "win": 2.0,
+      "lose": -1.0,
+      "hit": -0.3,
+      "step_penalty": 0.01,
+      "shoot_range": 3,
+      "freeze_ticks": 2,
+      "freeze_charges": 2,
+      "hp": 100,
+      "potion_heal": 50,
+      "enemy_damage": 50,
+      "guard_damage": 50,
+      "warlock_damage": 50,
+      "warlock_fireball_range": 3,
+      "n_spikes": 3,
+      "spike_damage": 34,
+      "n_levels": 3,
+      "levels": [
+        [
+          4,
+          2
+        ],
+        [
+          5,
+          2
+        ],
+        [
+          7,
+          3
+        ]
+      ]
+    }
+  },
+  "eval": {
+    "n_episodes": 10000,
+    "n_won": 0,
+    "n_lost": 5851,
+    "n_truncated": 4149
+  },
+  "developer_comment": "adjust the observation channel for warlock's fireball: now the strength of a fireball-related tile depends on its position. make sure the agent is slightly penalized (0.01) for every step it makes so that it doesn't linger on one level forever. number 2 because previous one didn't use the said changes."
+}

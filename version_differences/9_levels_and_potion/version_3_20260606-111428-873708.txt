@@ -1,0 +1,31 @@
+What changed from the previous version:
+    Added env.reward_coeffs.step_penalty: 0.01
+
+Developer comment: adjust the observation channel for warlock's fireball: now the strength of a fireball-related tile depends on its position. make sure the agent is slightly penalized (0.01) for every step it makes so that it doesn't linger on one level forever. number 2 because previous one didn't use the said changes.
+
+version recorded:
+obs_shape: (14, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 1  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=1000000   n_envs=8
+duration: 0h 51m 53s   (started 2026-06-06 11:14:33, ended 2026-06-06 12:06:26)
+git: 074940ac43   recorded: 2026-06-06 12:16:49
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=0 (0.0%)   lost=5851 (58.5%)   truncated=4149 (41.5%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
