@@ -34,7 +34,7 @@ class Game(EnemyMixin):
     REWARD_KEY = 0.3          # picking up the key
     REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
     REWARD_ALL_CLEARED = 0.5  # one-time per level: every enemy defeated, exit opens
-    REWARD_POTION = 0.3       # picking up a potion (scaled by HP actually restored)
+    REWARD_POTION = 0.6      # picking up a potion (scaled by HP actually restored)
     # Deliberately large. At a cleared level the agent weighs "go to the exit"
     # (collect this) against "idle until truncation" (~0); reaching the exit also
     # drops it into a harder, often-lethal next level, so with a small clear reward
