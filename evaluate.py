@@ -404,4 +404,4 @@ def main(model_path, n_episodes=30, grid_size=10):
 
 
 if __name__ == "__main__":
-    main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_1_20260605-182758-2c400e.zip", n_episodes=30)
+    main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_1_20260606-010948-aa8349.zip", n_episodes=30)

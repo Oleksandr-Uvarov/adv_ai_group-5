@@ -242,22 +242,33 @@ class EnemyMixin:
         self.warlock_fireball_ticks = 0
 
     def _fireball_danger_tiles(self):
-        """Tiles the in-flight fireball occupies now plus the ones it will still
-        sweep through before its range runs out, clipped to the grid edge (it
-        flies through walls, so walls are not excluded). The observation marks
-        this whole corridor instead of the single current tile: from one tile the
-        agent cannot tell which way the fireball is heading or how far it can
-        still reach, so it learns to fear any fireball in its lane. The corridor
-        shows exactly which tiles can still be hit - and, by omission, that tiles
-        beyond the range are safe."""
+        """The in-flight fireball's current tile plus the tiles it will still
+        sweep before its range runs out, each paired with an intensity in (0, 1].
+        Returns ``(tile, intensity)`` pairs (tiles clipped to the grid edge; the
+        fireball flies through walls, so walls are not excluded).
+
+        The intensity fades along the direction of travel - 1.0 on the tile the
+        fireball is on now, decreasing toward the far end of its reach - instead of
+        painting the whole corridor a flat 1.0. That flat corridor was the problem:
+        from a uniform lane the agent cannot tell which way the fireball is heading
+        or how soon a given tile gets hit, so every tile in the lane looks equally
+        deadly and the agent simply refuses to enter it - including when it needs to
+        line up on the warlock. The gradient encodes both direction (bright end =
+        where the fireball is, dim end = where it is going) and timing (a dim, far
+        tile is one the agent has several steps to cross before the fireball
+        arrives). Tiles behind the fireball - the lane between it and the now-still
+        warlock - stay unmarked (safe), which is exactly the gap the agent should
+        step into to punish the exposed warlock while the shot is still flying."""
         if self.warlock_fireball_pos is None:
             return []
         dr, dc = self.warlock_fireball_dir
         r, c = self.warlock_fireball_pos
-        tiles = [[r, c]]
-        for _ in range(self.warlock_fireball_ticks):
+        # +1 so even the farthest reachable tile keeps a non-zero intensity.
+        span = self.warlock_fireball_ticks + 1
+        tiles = [([r, c], 1.0)]
+        for i in range(1, self.warlock_fireball_ticks + 1):
             r, c = r + dr, c + dc
             if not (0 <= r < self.grid_size and 0 <= c < self.grid_size):
                 break
-            tiles.append([r, c])
+            tiles.append(([r, c], (span - i) / span))
         return tiles

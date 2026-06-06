@@ -27,6 +27,8 @@ class Game(EnemyMixin):
     REWARD_WIN = 2.0          # clearing the final level - the whole run is complete
     REWARD_LOSE = -1.0        # killed (HP hits 0), or grabbing the key past the guard
     REWARD_HIT = -0.3         # taking non-lethal damage from an enemy
+    REWARD_STEP_PENALTY = 0.01  # subtracted every step: a small living cost so
+                                # idling is never free (see step()).
 
     MAX_HP = 100
     POTION_HEAL = 50
@@ -63,6 +65,7 @@ class Game(EnemyMixin):
             "win": cls.REWARD_WIN,
             "lose": cls.REWARD_LOSE,
             "hit": cls.REWARD_HIT,
+            "step_penalty": cls.REWARD_STEP_PENALTY,
             "shoot_range": cls.SHOOT_RANGE,
             "freeze_ticks": cls.FREEZE_TICKS,
             "freeze_charges": cls.FREEZE_CHARGES,
@@ -385,6 +388,20 @@ class Game(EnemyMixin):
                 self.won = True
                 self.done = True
 
+        # A small flat living cost on every step. Without it, idling on an
+        # already-cleared level is free: reaching the exit only drops the player
+        # into a HARDER next level (more enemies, another warlock, a fresh chance
+        # to die for -1), so a risk-averse policy learns to clear the enemies and
+        # then just wander until the step limit truncates the episode at zero -
+        # exactly the "never tries to reach the finish" behaviour observed once
+        # multiple levels were added (with a single level, the exit was the end of
+        # the run, so there was no safer alternative). Charging for time makes
+        # standing around strictly worse than finishing, so the exit's
+        # REWARD_LEVEL_CLEAR / REWARD_WIN plus its speed bonus win out. It is kept
+        # well below REWARD_GOAL_STEP (0.1) so it never overwhelms the per-tile
+        # navigation gradient - moving toward the goal still nets positive.
+        reward -= self.REWARD_STEP_PENALTY
+
         self.steps += 1
         if self.steps >= self.step_limit and not terminated:  # step limit
             truncated = True
@@ -510,10 +527,11 @@ class Game(EnemyMixin):
                 melee[enemy_pos[0], enemy_pos[1]] = 1.0
         if self.warlock_pos is not None:
             warlock[self.warlock_pos[0], self.warlock_pos[1]] = 1.0
-        # Mark the fireball's whole danger corridor, not just its current tile
-        # (see EnemyMixin._fireball_danger_tiles).
-        for tile in self._fireball_danger_tiles():
-            warlock_fireball[tile[0], tile[1]] = 1.0
+        # Mark the fireball's danger corridor with an intensity that fades along
+        # its direction of travel (see EnemyMixin._fireball_danger_tiles): bright
+        # where the fireball is now, dim toward the far end of its reach.
+        for tile, intensity in self._fireball_danger_tiles():
+            warlock_fireball[tile[0], tile[1]] = intensity
         # Spikes are always-on hazards now, so every spike tile reads 1.0.
         for spike_pos in self.spike_poses:
             spikes[spike_pos[0], spike_pos[1]] = 1.0
