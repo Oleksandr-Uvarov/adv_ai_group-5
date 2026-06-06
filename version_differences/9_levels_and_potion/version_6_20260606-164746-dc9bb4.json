@@ -1,0 +1,123 @@
+{
+  "version": 6,
+  "run_tag": "20260606-164746-dc9bb4",
+  "recorded_at": "2026-06-06 19:24:35",
+  "timing": {
+    "started_at": "2026-06-06 16:47:50",
+    "ended_at": "2026-06-06 19:03:17",
+    "duration_seconds": 8126.499585,
+    "duration": "2h 15m 26s"
+  },
+  "git": {
+    "commit": "78fa9c4a1fea96b4546a185653a6a15e138b79f1",
+    "dirty": true
+  },
+  "libraries": {
+    "stable_baselines3": "2.8.0",
+    "torch": "2.12.0+cu130",
+    "gymnasium": "1.2.3",
+    "numpy": "2.4.6"
+  },
+  "training": {
+    "total_timesteps": 4000000,
+    "n_envs": 8,
+    "features_dim": 128,
+    "policy": "CnnPolicy",
+    "ppo_params": {
+      "n_steps": 2048,
+      "batch_size": 256,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "verbose": 1,
+      "seed": 42
+    }
+  },
+  "env": {
+    "obs_shape": [
+      15,
+      10,
+      10
+    ],
+    "grid_size": 10,
+    "n_melee": 2,
+    "n_levels": 3,
+    "melee_per_level": [
+      [
+        4,
+        2,
+        false
+      ],
+      [
+        5,
+        2,
+        true
+      ],
+      [
+        7,
+        3,
+        true
+      ]
+    ],
+    "n_guard": 1,
+    "n_warlock": 0,
+    "action_dim": 9,
+    "reward_coeffs": {
+      "goal_step": 0.1,
+      "enemy_step": 0.05,
+      "kill": 0.3,
+      "key": 0.3,
+      "freeze": 0.3,
+      "all_cleared": 0.5,
+      "potion": 0.3,
+      "level_clear": 3.0,
+      "win": 5.0,
+      "lose": -1.0,
+      "hit": -0.3,
+      "step_penalty": 0.01,
+      "shoot_range": 3,
+      "freeze_ticks": 2,
+      "freeze_charges": 2,
+      "hp": 100,
+      "potion_heal": 50,
+      "enemy_damage": 25,
+      "guard_damage": 25,
+      "warlock_damage": 25,
+      "warlock_fireball_range": 3,
+      "n_spikes": 3,
+      "spike_damage": 25,
+      "n_levels": 3,
+      "levels": [
+        [
+          4,
+          2,
+          false
+        ],
+        [
+          5,
+          2,
+          true
+        ],
+        [
+          7,
+          3,
+          true
+        ]
+      ]
+    }
+  },
+  "eval": {
+    "n_episodes": 10000,
+    "n_won": 3,
+    "n_lost": 1776,
+    "n_truncated": 8221,
+    "max_level_counts": [
+      7847,
+      2033,
+      120
+    ],
+    "n_board_cleared": 7382,
+    "n_key_picked": 5953,
+    "n_refused_exit": 3840
+  },
+  "developer_comment": "increase timesteps and step limit"
+}

@@ -1,0 +1,35 @@
+What changed from the previous version:
+    training.total_timesteps: 500000 -> 4000000
+
+Developer comment: increase timesteps and step limit
+
+version recorded:
+obs_shape: (15, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 0  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=4000000   n_envs=8
+duration: 2h 15m 26s   (started 2026-06-06 16:47:50, ended 2026-06-06 19:03:17)
+git: 78fa9c4a1f (dirty)   recorded: 2026-06-06 19:24:35
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=3 (0.0%)   lost=1776 (17.8%)   truncated=8221 (82.2%)
+    max level reached: L1=7847 (78.5%)   L2=2033 (20.3%)   L3=120 (1.2%)
+    emptied the board: 7382 (73.8%)
+    picked up the key: 5953 (59.5%)
+    truncated board-clear+key (refused exit): 3840 (38.4%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
