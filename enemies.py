@@ -144,14 +144,17 @@ class EnemyMixin:
         return reward, terminated
 
     def _move_warlock(self):
-        """Kite the player: close the gap until WARLOCK_FIREBALL_RANGE tiles away,
-        then stop closing and instead sidestep onto the player's row or column so
-        it can line up a shot. It never voluntarily steps nearer than the distance
-        it is already keeping (the player has to chase it down and shoot it), and
-        it never shares a tile with another entity. Distance is Manhattan, which
-        matches the fireball's straight-line, wall-piercing reach: when the
-        warlock is on the player's row/column the Manhattan distance is exactly the
-        number of tiles the fireball must cross."""
+        """Press the player: close the gap until WARLOCK_STANDOFF tiles away, and
+        on the way (and once there) sidestep onto the player's row or column to
+        line up a shot. It stops closing at the standoff - which is nearer than the
+        fireball range - so the warlock comes to the player and exposes itself
+        (lots of engagements, lots of chances to shoot it) instead of hanging back
+        at max range as a hard-to-catch kiter. It never steps nearer than the
+        standoff (or than it already is, while still approaching from beyond it),
+        and never shares a tile with another entity. Distance is Manhattan, which
+        matches the fireball's straight-line, wall-piercing reach: when the warlock
+        is on the player's row/column the Manhattan distance is exactly the number
+        of tiles the fireball must cross."""
         pr, pc = self.player_pos
         wr, wc = self.warlock_pos
         occupied = self._occupied_cells()
@@ -165,18 +168,20 @@ class EnemyMixin:
                 candidates.append((nr, nc))
 
         cur_dist = abs(wr - pr) + abs(wc - pc)
-        # Never close to nearer than we already are once inside the ring; from
-        # farther out the floor is the ring radius, so any approaching move is fine.
-        floor_dist = min(cur_dist, self.WARLOCK_FIREBALL_RANGE)
+        # Never close nearer than the standoff (or than we already are, if we are
+        # still approaching from beyond it).
+        floor_dist = min(cur_dist, self.WARLOCK_STANDOFF)
 
         def score(cell):
             r, c = cell
             d = abs(r - pr) + abs(c - pc)
             aligned = (r == pr or c == pc)
-            # Top priority: stand where it can actually fire (aligned, in range).
+            # Top priority: stand where it can actually fire (aligned, within
+            # fireball range - which is larger than the standoff, so firing from
+            # the standoff distance always qualifies).
             shoot = 100 if (aligned and 0 < d <= self.WARLOCK_FIREBALL_RANGE) else 0
-            # Hug the range ring; hard-forbid diving nearer than floor_dist.
-            ring = -abs(d - self.WARLOCK_FIREBALL_RANGE)
+            # Hug the standoff ring; hard-forbid diving nearer than floor_dist.
+            ring = -abs(d - self.WARLOCK_STANDOFF)
             keep = -1000 if d < floor_dist else 0
             return shoot + ring + keep
 

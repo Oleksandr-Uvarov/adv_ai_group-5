@@ -36,6 +36,10 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
         batch_size=256,
         n_epochs=10,
         learning_rate=3e-4,
+        # Entropy bonus (SB3 default 0.0). Keeps the policy exploring instead of
+        # collapsing to a deterministic optimum - the mechanism behind the agent
+        # getting stuck refusing the exit. Raise toward 0.02 if refusal persists.
+        ent_coef=0.01,
         verbose=1,
         seed=42,
     )
@@ -61,7 +65,11 @@ def train(directory: str, total_timesteps: int, developer_comment: str = "",
 
     # n_envs - number of environments run in parallel.
     # 8 should multiply the FPS by 8, but in reality it's slower than that.
-    env = make_vec_env(lambda: GameEnv(grid_size=GRID_SIZE), n_envs=N_ENVS, seed=42)
+    # randomize_start spreads training across all levels (with realistic carried
+    # HP/charges) so the warlock levels aren't starved; evaluation uses the
+    # default GameEnv (always starts at level 1) to measure the true task.
+    env = make_vec_env(lambda: GameEnv(grid_size=GRID_SIZE, randomize_start=True),
+                       n_envs=N_ENVS, seed=42)
 
     model = PPO(PPO_POLICY,
                 env,

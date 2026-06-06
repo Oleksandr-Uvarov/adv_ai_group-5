@@ -61,6 +61,13 @@ PPO_PARAMS = dict(
     batch_size=256,
     n_epochs=10,
     learning_rate=3e-4,
+    # Entropy bonus on the policy. SB3's default is 0.0, which lets the policy
+    # converge to a near-deterministic optimum and stop exploring - exactly how
+    # the agent got stuck refusing the exit (it stopped sampling the step onto
+    # the exit, so it never re-collected the +3 that would correct that). A small
+    # positive value keeps it exploring those rarely-taken actions. Raise toward
+    # 0.02 if the refusal persists.
+    ent_coef=0.01,
     verbose=1,
     seed=42,
 )
@@ -72,7 +79,11 @@ policy_kwargs = dict(
 
 # n_envs - number of environments run in parallel.
 # 8 should multiply the FPS by 8, but in reality it's slower than that.
-env = make_vec_env(lambda: GameEnv(grid_size=GRID_SIZE), n_envs=N_ENVS, seed=42)
+# randomize_start spreads training across all levels (with realistic carried
+# HP/charges) so the warlock levels aren't starved; evaluation still uses the
+# default GameEnv (always starts at level 1) to measure the true task.
+env = make_vec_env(lambda: GameEnv(grid_size=GRID_SIZE, randomize_start=True),
+                   n_envs=N_ENVS, seed=42)
 
 model = PPO(PPO_POLICY,
             env,

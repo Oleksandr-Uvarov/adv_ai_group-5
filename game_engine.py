@@ -58,12 +58,24 @@ class Game(EnemyMixin):
     GUARD_DAMAGE = 25
     WARLOCK_DAMAGE = 25
     WARLOCK_FIREBALL_RANGE = 3
+    # How close the warlock presses before it stops closing and just holds ground
+    # to line up shots. Smaller than the fireball range, so the warlock actively
+    # chases onto the player's row/column and exposes itself - more engagements
+    # and more chances to shoot it - instead of hanging back at max range like a
+    # hard-to-catch kiter. Kept >= 1 so it never walks onto the player.
+    WARLOCK_STANDOFF = 2
     SPIKE_DAMAGE = 25
 
     FREEZE_TICKS = 2          # how long a single freeze lasts
     FREEZE_CHARGES = 2        # freezes available per run (NOT refilled between levels)
     SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
     N_SPIKES = 3
+
+    # Plausible carried HP for a randomized mid-run start (see reset()). HP is
+    # only ever whittled down in 25-point hits or healed in 50-point potions from
+    # a 100 cap, so realistic values are multiples of 25; 25 (one hit from death)
+    # is left out to avoid flooding training with near-unwinnable starts.
+    START_HP_CHOICES = [50, 75, 100]
 
     # Roguelike levels played back-to-back inside one episode, as
     # (total_melee, max_active_melee, has_warlock) triples: of `total_melee`
@@ -106,26 +118,60 @@ class Game(EnemyMixin):
             "guard_damage": cls.GUARD_DAMAGE,
             "warlock_damage": cls.WARLOCK_DAMAGE,
             "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE,
+            "warlock_standoff": cls.WARLOCK_STANDOFF,
             "n_spikes": cls.N_SPIKES,
             "spike_damage": cls.SPIKE_DAMAGE,
             "n_levels": cls.N_LEVELS,
             "levels": [list(lvl) for lvl in cls.LEVELS]
         }
 
-    def __init__(self, grid_size=10):
+    def __init__(self, grid_size=10, randomize_start=False):
         self.grid_size = grid_size
+        # Training-only: randomise the starting level and carried HP/charges (see
+        # reset). Evaluation leaves this False so it always measures the true task
+        # - start at level 1, full resources, play the whole run.
+        self.randomize_start = randomize_start
         self.reset()
         self.done = False
-        self.step_limit = 100
+        self.step_limit = 150
 
     def reset(self):
-        """Start a fresh run at the first level. HP and freeze charges are set
-        here and then carried across levels - _setup_level rebuilds the map and
-        entities for each level but deliberately leaves these run-wide stats (and
-        the level index / won flag) untouched. Returns the initial state."""
-        self.level = 0
-        self.hp = self.MAX_HP
-        self.freeze_charges = self.FREEZE_CHARGES
+        """Start a fresh run and return the initial state.
+
+        Normally that means the true task: level 1 at full HP and freeze charges,
+        played all the way through. This is what evaluation always uses.
+
+        When ``randomize_start`` is on (training only), the run instead begins at
+        a RANDOM level with a plausible "arrived from an earlier level" amount of
+        HP and freeze charges. This is a training-distribution trick, not a change
+        to the task: an episode that starts at level 2 still plays 2 -> 3 and can
+        win, and the agent still observes and spends its carried resources. Its
+        purpose is to stop the later (warlock) levels from being starved - under
+        the true always-start-at-1 distribution the agent reached level 2 in only
+        ~1/5 of episodes and level 3 in ~1/100, so it could never learn to survive
+        them; and because surviving them looked impossible, it learned to refuse
+        the level-1 exit that leads there. Seeding every level as a possible start
+        feeds them equally.
+
+        HP / freeze / level / won are set here; _setup_level rebuilds the map and
+        entities for whichever level we land on and otherwise leaves these run-wide
+        stats untouched so they carry across levels."""
+        if self.randomize_start:
+            # Uniform over levels (tune the spread here if later levels need even
+            # more weight). Level 1 always starts fresh; a mid-run level inherits
+            # a randomised, realistically-depleted pool of HP and charges so the
+            # agent learns to cope with arriving hurt or out of freezes.
+            self.level = random.randint(0, self.N_LEVELS - 1)
+            if self.level == 0:
+                self.hp = self.MAX_HP
+                self.freeze_charges = self.FREEZE_CHARGES
+            else:
+                self.hp = random.choice(self.START_HP_CHOICES)
+                self.freeze_charges = random.randint(0, self.FREEZE_CHARGES)
+        else:
+            self.level = 0
+            self.hp = self.MAX_HP
+            self.freeze_charges = self.FREEZE_CHARGES
         self.won = False
         self.done = False
         self._setup_level()

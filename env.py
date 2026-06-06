@@ -9,9 +9,13 @@ from game_engine import Game
 class GameEnv(gym.Env):
     metadata = {"render_modes": ["human", "ansi"]}
 
-    def __init__(self, grid_size=10, render_mode=None):
+    def __init__(self, grid_size=10, render_mode=None, randomize_start=False):
         super().__init__()
-        self.game = Game(grid_size)
+        # randomize_start is a TRAINING-only switch: it randomises the starting
+        # level and carried HP/freeze so the later levels aren't starved (see
+        # Game.reset). Leave it False for evaluation so the env measures the true
+        # task (always start at level 1 with full resources).
+        self.game = Game(grid_size, randomize_start=randomize_start)
         self.grid_size = grid_size
         self.render_mode = render_mode
         self._renderer = None
