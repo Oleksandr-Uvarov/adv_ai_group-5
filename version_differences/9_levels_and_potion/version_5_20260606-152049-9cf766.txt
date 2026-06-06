@@ -1,0 +1,39 @@
+What changed from the previous version:
+    env.melee_per_level: [[4, 2], [5, 2], [7, 3]] -> [[4, 2, False], [5, 2, True], [7, 3, True]]
+    env.n_warlock: 1 -> 0
+    env.obs_shape: [14, 10, 10] -> [15, 10, 10]
+    Added env.reward_coeffs.enemy_step: 0.05
+    env.reward_coeffs.levels: [[4, 2], [5, 2], [7, 3]] -> [[4, 2, False], [5, 2, True], [7, 3, True]]
+
+Developer comment: adjust the levels. reward the agent for getting closer to the enemy. add another observation channel for the closest enemy.
+
+version recorded:
+obs_shape: (15, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 0  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=500000   n_envs=8
+duration: 0h 22m 30s   (started 2026-06-06 15:20:53, ended 2026-06-06 15:43:23)
+git: 95d0d521bc   recorded: 2026-06-06 16:02:32
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=0 (0.0%)   lost=1881 (18.8%)   truncated=8119 (81.2%)
+    max level reached: L1=9500 (95.0%)   L2=498 (5.0%)   L3=2 (0.0%)
+    emptied the board: 6071 (60.7%)
+    picked up the key: 2817 (28.2%)
+    truncated board-clear+key (refused exit): 2129 (21.3%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
