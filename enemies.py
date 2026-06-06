@@ -1,9 +1,10 @@
 """Enemy behaviour for :class:`game_engine.Game`, split out as a mixin.
 
 ``EnemyMixin`` carries everything the enemies do - the melee enemies (collision-
-free pathing toward the player and spawning in from the reserve) and the warlock
-(kiting movement plus its fireball). ``Game`` inherits from it, so these methods
-run with full access to the game's state via ``self`` (``self.grid``,
+free pathing toward the player and spawning in from the reserve), the warlock
+(kiting movement plus its fireball) and the boss dragon (2x2, leap-leap-fire
+pattern, smashes through walls). ``Game`` inherits from it, so these methods run
+with full access to the game's state via ``self`` (``self.grid``,
 ``self.player_pos``, the entity lists, the tunable constants, ``self._damage_player``,
 etc.). All map queries go through the pure helpers in :mod:`pathfinding`.
 
@@ -13,8 +14,13 @@ the player, rewards and the observation."""
 import random
 
 from pathfinding import (
-    FLOOR, floor_cells, bfs_distance, bfs_step_toward, is_reachable,
+    FLOOR, WALL, floor_cells, bfs_distance, bfs_step_toward, is_reachable,
 )
+
+
+def _sign(x):
+    """-1, 0 or +1 - the direction of x."""
+    return (x > 0) - (x < 0)
 
 
 class EnemyMixin:
@@ -32,6 +38,8 @@ class EnemyMixin:
             cells.add(tuple(self.warlock_pos))
         if self.potion_pos is not None:
             cells.add(tuple(self.potion_pos))
+        for t in self._dragon_tiles():
+            cells.add(tuple(t))
         for m in self.melee_poses:
             if m is not None:
                 cells.add(tuple(m))
@@ -41,10 +49,12 @@ class EnemyMixin:
 
     def _all_enemies_defeated(self):
         """True once no enemy of any kind remains and none are waiting to spawn:
-        every melee enemy killed and the reserve exhausted, the warlock dead and
-        the guard dead. This is the condition that opens the exit."""
+        every melee enemy killed and the reserve exhausted, the warlock dead, the
+        guard dead and the boss dragon dead. This is the condition that opens the
+        exit (on the dragon level, that means the dragon must be killed)."""
         return (self.guard_pos is None
                 and self.warlock_pos is None
+                and self.dragon_pos is None
                 and self.melee_reserve == 0
                 and all(m is None for m in self.melee_poses))
 
@@ -261,3 +271,86 @@ class EnemyMixin:
                 break
             tiles.append([r, c])
         return tiles
+
+    # ----------------------------------------------------------------- dragon
+    def _dragon_tiles(self):
+        """The four [row, col] tiles the 2x2 dragon occupies, or [] if it is dead
+        or this level has no dragon."""
+        if self.dragon_pos is None:
+            return []
+        r, c = self.dragon_pos
+        return [[r, c], [r, c + 1], [r + 1, c], [r + 1, c + 1]]
+
+    def _dragon_action(self, reward, terminated):
+        """Run one tick of the dragon's repeating attack pattern: leap, leap,
+        fire (big), fire (small). Phases 0-1 leap one tile toward the player;
+        phase 2 erupts a fire ring around the dragon; phase 3 keeps that same ring
+        burning one more tick (shown smaller). The phase advances every tick."""
+        phase = self.dragon_phase
+        if phase in (0, 1):
+            # Leaping: no fire on the ground this tick.
+            self.dragon_fire_tiles = []
+            self.dragon_fire_stage = None
+            reward, terminated = self._dragon_leap(reward, terminated)
+        elif phase == 2:
+            self._dragon_ignite()                  # big fire, smashes walls
+            reward, terminated = self._dragon_burn(reward, terminated)
+        else:  # phase == 3
+            self.dragon_fire_stage = "small"       # same tiles, second/last tick
+            reward, terminated = self._dragon_burn(reward, terminated)
+        self.dragon_phase = (phase + 1) % 4
+        return reward, terminated
+
+    def _dragon_leap(self, reward, terminated):
+        """Move the 2x2 dragon one tile toward the player, breaking any walls the
+        body lands on (it smashes through terrain). Prefers the axis with the
+        larger gap, falling back to the other if the move would push the body off
+        the inner grid. If the player ends up under the body, it is trampled."""
+        r, c = self.dragon_pos
+        pr, pc = self.player_pos
+        ddr, ddc = pr - (r + 0.5), pc - (c + 0.5)
+        if abs(ddr) >= abs(ddc):
+            moves = [(_sign(ddr), 0), (0, _sign(ddc))]
+        else:
+            moves = [(0, _sign(ddc)), (_sign(ddr), 0)]
+        for mr, mc in moves:
+            if mr == 0 and mc == 0:
+                continue
+            nr, nc = r + mr, c + mc
+            # Keep the 2x2 inside the inner grid (top-left in [1, size-3]); the
+            # dragon smashes interior walls but never the map border.
+            if 1 <= nr <= self.grid_size - 3 and 1 <= nc <= self.grid_size - 3:
+                r, c = nr, nc
+                break
+        self.dragon_pos = [r, c]
+        for fr, fc in self._dragon_tiles():
+            if self.grid[fr, fc] == WALL:
+                self.grid[fr, fc] = FLOOR
+        if [self.player_pos[0], self.player_pos[1]] in self._dragon_tiles():
+            reward, terminated = self._damage_player(self.DRAGON_CONTACT_DAMAGE)
+        return reward, terminated
+
+    def _dragon_ignite(self):
+        """Light the ring of tiles surrounding the 2x2 body (the 4x4 box minus the
+        body) on fire and smash any interior walls in it. Border tiles can be in
+        the ring but are never broken. Sets the fire tiles + 'big' display stage."""
+        r, c = self.dragon_pos
+        body = {(fr, fc) for fr, fc in self._dragon_tiles()}
+        tiles = []
+        for rr in range(r - 1, r + 3):
+            for cc in range(c - 1, c + 3):
+                if (rr, cc) in body:
+                    continue
+                if 0 <= rr < self.grid_size and 0 <= cc < self.grid_size:
+                    tiles.append([rr, cc])
+                    if (1 <= rr <= self.grid_size - 2 and 1 <= cc <= self.grid_size - 2
+                            and self.grid[rr, cc] == WALL):
+                        self.grid[rr, cc] = FLOOR
+        self.dragon_fire_tiles = tiles
+        self.dragon_fire_stage = "big"
+
+    def _dragon_burn(self, reward, terminated):
+        """Damage the player if it is standing on a burning tile this fire tick."""
+        if [self.player_pos[0], self.player_pos[1]] in self.dragon_fire_tiles:
+            reward, terminated = self._damage_player(self.DRAGON_FIRE_DAMAGE)
+        return reward, terminated

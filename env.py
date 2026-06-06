@@ -58,6 +58,8 @@ class GameEnv(gym.Env):
                 grid_display[sp[0]][sp[1]] = 'S' if g.spike_statuses[i] else 's'
             if g.potion_pos is not None:
                 grid_display[g.potion_pos[0]][g.potion_pos[1]] = 'P'
+            for t in getattr(g, "dragon_fire_tiles", []):
+                grid_display[t[0]][t[1]] = 'f'
             grid_display[g.exit_pos[0]][g.exit_pos[1]] = 'X'
             for enemy_pos in g.melee_poses:
                 if enemy_pos is not None:
@@ -70,6 +72,8 @@ class GameEnv(gym.Env):
                 grid_display[g.key_pos[0]][g.key_pos[1]] = 'K'
             if g.guard_pos is not None:
                 grid_display[g.guard_pos[0]][g.guard_pos[1]] = 'G'
+            for t in g._dragon_tiles():
+                grid_display[t[0]][t[1]] = 'D'
             # Drawn last so the player is never hidden under another glyph.
             grid_display[g.player_pos[0]][g.player_pos[1]] = '@'
             for row in grid_display:

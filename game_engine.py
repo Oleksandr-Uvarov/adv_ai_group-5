@@ -19,6 +19,7 @@ class Game(EnemyMixin):
     # version_utils.env_signature / reward_coeffs).
     REWARD_GOAL_STEP = 0.1    # per-tile progress toward the current goal
     REWARD_KILL = 0.3         # shooting an enemy (melee, guard or warlock)
+    REWARD_DRAGON_KILL = 1.0  # shooting the boss dragon (far harder than a normal kill)
     REWARD_KEY = 0.3          # picking up the key
     REWARD_FREEZE = 0.3       # using a freeze charge safely (warlock dead)
     REWARD_ALL_CLEARED = 0.5  # one-time per level: every enemy defeated, exit opens
@@ -35,19 +36,23 @@ class Game(EnemyMixin):
     WARLOCK_DAMAGE = 50
     WARLOCK_FIREBALL_RANGE = 3
     SPIKE_DAMAGE = 34
+    DRAGON_CONTACT_DAMAGE = 50  # the dragon's 2x2 body leaping onto the player
+    DRAGON_FIRE_DAMAGE = 50     # one fire-ring tick (two ticks land, so both = lethal)
 
     FREEZE_TICKS = 2          # how long a single freeze lasts
     FREEZE_CHARGES = 2        # freezes available per run (NOT refilled between levels)
     SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
     N_SPIKES = 3
 
-    # Roguelike levels played back-to-back inside one episode, as
-    # (total_melee, max_active_melee) pairs: of `total_melee` enemies only
-    # `max_active_melee` are on the board at once, the rest spawn in as they die.
-    # HP and freeze charges carry across levels; clearing the last level wins the
-    # run. The warlock/guard (one each) are unchanged per level.
+    # Roguelike levels played back-to-back inside one episode. The first three are
+    # melee levels, given as (total_melee, max_active_melee) pairs: of
+    # `total_melee` enemies only `max_active_melee` are on the board at once, the
+    # rest spawn in as they die. The fourth (DRAGON_LEVEL) is a boss level - a
+    # single 2x2 dragon, no other enemies and no potion, but HP restored to full.
+    # HP and freeze charges carry across levels; clearing the last level wins.
     LEVELS = [(4, 2), (5, 2), (7, 3)]
-    N_LEVELS = len(LEVELS)
+    DRAGON_LEVEL = len(LEVELS)   # level index of the boss (the 4th level)
+    N_LEVELS = len(LEVELS) + 1
 
     @classmethod
     def reward_coeffs(cls):
@@ -55,6 +60,7 @@ class Game(EnemyMixin):
         return {
             "goal_step": cls.REWARD_GOAL_STEP,
             "kill": cls.REWARD_KILL,
+            "dragon_kill": cls.REWARD_DRAGON_KILL,
             "key": cls.REWARD_KEY,
             "freeze": cls.REWARD_FREEZE,
             "all_cleared": cls.REWARD_ALL_CLEARED,
@@ -74,8 +80,10 @@ class Game(EnemyMixin):
             "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE,
             "n_spikes": cls.N_SPIKES,
             "spike_damage": cls.SPIKE_DAMAGE,
+            "dragon_contact_damage": cls.DRAGON_CONTACT_DAMAGE,
+            "dragon_fire_damage": cls.DRAGON_FIRE_DAMAGE,
             "n_levels": cls.N_LEVELS,
-            "levels": [list(lvl) for lvl in cls.LEVELS]
+            "melee_levels": [list(lvl) for lvl in cls.LEVELS]
         }
 
     def __init__(self, grid_size=10):
@@ -98,11 +106,25 @@ class Game(EnemyMixin):
         return self._get_state()
 
     def _setup_level(self):
-        """Generate the map and entities for the current level. Per-level enemy
-        counts come from LEVELS; a healing potion appears on every level after the
-        first (the player arrives there with carried-over HP). HP, freeze charges,
-        the level index and the won/done flags are NOT reset here so they persist
-        across levels."""
+        """Build the current level. Sets the dragon/fire state to empty first so
+        those observation channels exist (and read zero) on every non-dragon
+        level, keeping the observation shape constant, then dispatches to the
+        melee or boss builder. HP, freeze charges, the level index and the
+        won/done flags are not reset here so they persist across levels (the
+        dragon level restores HP itself)."""
+        self.dragon_pos = None
+        self.dragon_phase = 0
+        self.dragon_fire_tiles = []
+        self.dragon_fire_stage = None
+        if self.level == self.DRAGON_LEVEL:
+            self._setup_dragon_level()
+        else:
+            self._setup_melee_level()
+
+    def _setup_melee_level(self):
+        """Generate the map and entities for a melee level (the first three).
+        Per-level enemy counts come from LEVELS; a healing potion appears on every
+        level after the first (the player arrives there with carried-over HP)."""
         total_melee, self.max_active_melee = self.LEVELS[self.level]
         # Simple map: walls on border, floor inside
         while True:
@@ -221,6 +243,94 @@ class Game(EnemyMixin):
                     and bfs_distance(self.grid, self.player_pos, self.exit_pos) >= 4):
                 break
 
+    def _setup_dragon_level(self):
+        """Boss level: one 2x2 dragon and nothing else (no melee, guard, warlock
+        or potion). HP is restored to full on entry - the only healing this level
+        offers. Layout is otherwise the usual player / key / exit / spikes, and
+        the dragon is the enemy that must be defeated for the exit to open."""
+        self.hp = self.MAX_HP            # full heal entering the boss (no potions here)
+        self.max_active_melee = 0
+        self.melee_poses = []
+        self.melee_reserve = 0
+        self.guard_pos = None
+        self.warlock_pos = None
+        self.warlock_fireball_pos = None
+        self.warlock_fireball_dir = None
+        self.warlock_fireball_ticks = 0
+        self.potion_pos = None
+
+        while True:
+            self.grid = np.zeros((self.grid_size, self.grid_size), dtype=np.int32)
+            self.grid[0, :]  = WALL
+            self.grid[-1, :] = WALL
+            self.grid[:, 0]  = WALL
+            self.grid[:, -1] = WALL
+            for r in range(1, self.grid_size - 1):
+                for c in range(1, self.grid_size - 1):
+                    if random.random() < 0.2:
+                        self.grid[r, c] = WALL
+
+            cells = floor_cells(self.grid)
+            if len(cells) < 3 + self.N_SPIKES:
+                continue
+
+            positions = random.sample(cells, 3)   # player, exit, key
+            self.player_pos = list(positions[0])
+            self.exit_pos   = list(positions[1])
+            self.key_pos    = list(positions[2])
+            occupied = set(positions)
+
+            # Place the 2x2 dragon on a clear, unoccupied block a few tiles away.
+            dragon_tl = self._sample_dragon_topleft(occupied)
+            if dragon_tl is None:
+                continue
+            self.dragon_pos = dragon_tl
+            self.dragon_phase = 0
+            self.dragon_fire_tiles = []
+            self.dragon_fire_stage = None
+            occupied.update(tuple(t) for t in self._dragon_tiles())
+
+            free = [cell for cell in cells
+                    if cell not in occupied and wall_neighbor_count(self.grid, cell) <= 1]
+            if len(free) < self.N_SPIKES:
+                continue
+            self.spike_poses = [list(cell) for cell in random.sample(free, self.N_SPIKES)]
+            self.spike_statuses = [True] * self.N_SPIKES
+
+            # Level-local state (the dragon has no guard, so the key is free).
+            self.freeze_ticks = 0
+            self.has_key = False
+            self.enemies_cleared_awarded = False
+            self.steps = 0
+            self.last_shot = None
+
+            spikes_set = {tuple(s) for s in self.spike_poses}
+            if (is_reachable(self.grid, self.player_pos, self.exit_pos)
+                    and is_reachable(self.grid, self.player_pos, self.key_pos)
+                    and is_reachable_avoiding(self.grid, self.player_pos, self.key_pos, spikes_set)
+                    and is_reachable_avoiding(self.grid, self.key_pos, self.exit_pos, spikes_set)
+                    and bfs_distance(self.grid, self.player_pos, self.key_pos) >= 2
+                    and bfs_distance(self.grid, self.player_pos, self.exit_pos) >= 4):
+                break
+
+    def _sample_dragon_topleft(self, occupied):
+        """A 2x2 top-left whose whole footprint is floor and unoccupied, and whose
+        centre is at least 4 tiles (Manhattan) from the player so the boss does
+        not start on top of it. None if nothing fits. Top-left row/col stay in
+        [1, grid_size - 3] so the 2x2 never touches the wall border."""
+        candidates = []
+        for r in range(1, self.grid_size - 2):
+            for c in range(1, self.grid_size - 2):
+                foot = [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
+                if any(self.grid[fr, fc] == WALL for fr, fc in foot):
+                    continue
+                if any((fr, fc) in occupied for fr, fc in foot):
+                    continue
+                if abs(self.player_pos[0] - (r + 0.5)) + abs(self.player_pos[1] - (c + 0.5)) < 4:
+                    continue
+                candidates.append([r, c])
+        return random.choice(candidates) if candidates else None
+
     def _move_agent(self, action, terminated):
         if self.has_key:
             goal_pos = self.exit_pos
@@ -234,8 +344,8 @@ class Game(EnemyMixin):
         new_r = self.player_pos[0] + dr
         new_c = self.player_pos[1] + dc
 
-        # Don't move into walls
-        if self.grid[new_r, new_c] != WALL:
+        # Don't move into walls or into the dragon's body (its 2x2 is solid).
+        if self.grid[new_r, new_c] != WALL and [new_r, new_c] not in self._dragon_tiles():
             self.player_pos = [new_r, new_c]
 
         new_goal_dist = bfs_distance(self.grid, self.player_pos, goal_pos)
@@ -351,6 +461,8 @@ class Game(EnemyMixin):
                     reward, terminated = self._next_enemy_action(reward, terminated)
                 if not terminated:
                     reward, terminated = self._warlock_action(reward, terminated)
+                if not terminated and self.dragon_pos is not None:
+                    reward, terminated = self._dragon_action(reward, terminated)
             # Fill any slot left empty by a kill with a fresh enemy from the
             # reserve. Runs regardless of freeze, since the player can still shoot
             # an enemy on a frozen step.
@@ -414,7 +526,9 @@ class Game(EnemyMixin):
         deltas = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0)}
         direction = directions[action]
 
-        enemies = [*self.melee_poses, self.guard_pos, self.warlock_pos]
+        # The dragon's whole 2x2 body is shootable; a hit on any of its tiles
+        # kills the boss in one shot, like every other enemy.
+        enemies = [*self.melee_poses, self.guard_pos, self.warlock_pos, *self._dragon_tiles()]
         enemies = [enemy for enemy in enemies if enemy is not None]
 
         closest_enemy = (
@@ -430,18 +544,26 @@ class Game(EnemyMixin):
         if (closest_enemy is not None
                 and bfs_distance(self.grid, self.player_pos, closest_enemy) <= self.SHOOT_RANGE):
             hit = list(closest_enemy)
-            if list(closest_enemy) == self.guard_pos:
+            if self.dragon_pos is not None and hit in self._dragon_tiles():
+                self.dragon_pos = None
+                self.dragon_fire_tiles = []
+                self.dragon_fire_stage = None
+                hit_sprite = "dragon"
+                reward = self.REWARD_DRAGON_KILL
+            elif hit == self.guard_pos:
                 self.guard_pos = None
                 hit_sprite = "guard"
-            elif list(closest_enemy) == self.warlock_pos:
+                reward = self.REWARD_KILL
+            elif hit == self.warlock_pos:
                 self.warlock_pos = None
                 hit_sprite = "warlock"
+                reward = self.REWARD_KILL
             else:
                 hit_sprite = "enemy"
                 for i in range(len(self.melee_poses)):
-                    if list(closest_enemy) == self.melee_poses[i]:
+                    if hit == self.melee_poses[i]:
                         self.melee_poses[i] = None
-            reward = self.REWARD_KILL
+                reward = self.REWARD_KILL
 
         # Record the projectile's path purely for rendering; the game logic above
         # is unchanged (still hitscan) and the observation never sees this.
@@ -495,6 +617,16 @@ class Game(EnemyMixin):
         # Potion channel: always present (zeros when there is no potion, e.g. the
         # first level) so the observation shape is identical on every level.
         potion = np.zeros_like(self.grid, dtype=np.float32)
+        # Dragon body (its 2x2) and its fire ring. The phase plane is a constant
+        # carrying the dragon's attack phase (normalized 0..1) so the agent can
+        # anticipate the fire that follows the two leaps. All three read zero on
+        # the non-dragon levels, keeping the observation shape constant.
+        dragon = np.zeros_like(self.grid, dtype=np.float32)
+        dragon_fire = np.zeros_like(self.grid, dtype=np.float32)
+        dragon_phase = np.full(
+            (self.grid_size, self.grid_size),
+            (self.dragon_phase / 3.0) if self.dragon_pos is not None else 0.0,
+            dtype=np.float32)
 
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
@@ -519,10 +651,16 @@ class Game(EnemyMixin):
             spikes[spike_pos[0], spike_pos[1]] = 1.0
         if self.potion_pos is not None:
             potion[self.potion_pos[0], self.potion_pos[1]] = 1.0
+        for tile in self._dragon_tiles():
+            dragon[tile[0], tile[1]] = 1.0
+        for tile in self.dragon_fire_tiles:
+            if 0 <= tile[0] < self.grid_size and 0 <= tile[1] < self.grid_size:
+                dragon_fire[tile[0], tile[1]] = 1.0
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 
         return np.stack([walls, player, exit_, freeze,
                          freeze_status, distance_map(self.grid, goal), key,
-                         guard, melee, warlock, warlock_fireball, hp, spikes, potion],
+                         guard, melee, warlock, warlock_fireball, hp, spikes, potion,
+                         dragon, dragon_fire, dragon_phase],
                         axis=0)

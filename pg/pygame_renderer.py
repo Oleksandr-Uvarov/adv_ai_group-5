@@ -21,9 +21,14 @@ class Renderer:
         self.sprites = {}
         for name in ("floor", "wall", "player", "exit", "enemy", "key",
                      "guard", "fireball", "warlock", "warlock_fireball",
-                     "activated_spikes", "potion"):
+                     "activated_spikes", "potion", "fire_big", "fire_small"):
             img = pygame.image.load(_SPRITES_DIR / f"{name}.png").convert_alpha()
             self.sprites[name] = pygame.transform.scale(img, (self.TILE_SIZE, self.TILE_SIZE))
+        # The dragon spans 2x2 tiles, so its sprite is scaled to twice the tile
+        # size and blitted from its top-left corner.
+        dragon_img = pygame.image.load(_SPRITES_DIR / "dragon.png").convert_alpha()
+        self.sprites["dragon"] = pygame.transform.scale(
+            dragon_img, (2 * self.TILE_SIZE, 2 * self.TILE_SIZE))
 
     def draw(self, game):
         # Shooting is hitscan in the game logic, but for display we animate the
@@ -65,6 +70,14 @@ class Renderer:
         # The potion is a floor pickup; draw it under the entities too.
         blit("potion", getattr(game, "potion_pos", None))
 
+        # Dragon fire ring (ground hazard): a big flame on the first tick, a small
+        # one on the second. Drawn under the entities.
+        fire_tiles = getattr(game, "dragon_fire_tiles", [])
+        if fire_tiles:
+            fire_name = "fire_big" if getattr(game, "dragon_fire_stage", None) == "big" else "fire_small"
+            for tile in fire_tiles:
+                blit(fire_name, tile)
+
         blit("exit", game.exit_pos)
         blit("key", game.key_pos)
         for enemy_pos in game.melee_poses:
@@ -76,6 +89,11 @@ class Renderer:
         blit("warlock_fireball", game.warlock_fireball_pos)
         if extra is not None:
             blit(extra[0], extra[1])
+        # The dragon occupies 2x2 tiles; its sprite is pre-scaled to match and is
+        # blitted from its top-left corner, under the player.
+        dpos = getattr(game, "dragon_pos", None)
+        if dpos is not None:
+            self.screen.blit(self.sprites["dragon"], (dpos[1] * ts, dpos[0] * ts))
         blit("player", game.player_pos)
         if fireball is not None:
             blit("fireball", fireball)
