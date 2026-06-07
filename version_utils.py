@@ -165,7 +165,7 @@ def _format_txt(record, diff_block):
         f"obs_shape: {tuple(env['obs_shape'])}   grid_size: {env['grid_size']}",
         f"enemies: {env['n_melee']} melee, {env['n_guard']}, warlock {env['n_warlock']}  action_dim: {env['action_dim']}",
         f"reward coeffs: goal {rc['goal_step']}, kill {rc['kill']}, "
-        f"freeze {rc['freeze']}, all_cleared {rc['all_cleared']}",
+        f"freeze {rc['freeze']}, enemy_step {rc['enemy_step']}",
         "",
         f"training: total_timesteps={tr['total_timesteps']}   n_envs={tr['n_envs']}",
         f"duration: {timing.get('duration', 'unknown')}   "

@@ -2,8 +2,8 @@ import numpy as np
 import random
 
 from pathfinding import (
-    FLOOR, WALL, floor_cells, wall_neighbor_count, adjacent_floor_pos,
-    is_reachable, is_reachable_avoiding, is_reachable_unidirectional,
+    WALL, floor_cells, adjacent_floor_pos,
+    is_reachable, is_reachable_unidirectional,
     is_reachable_unidirectional_any, bfs_distance, distance_map,
 )
 from enemies import EnemyMixin
@@ -18,10 +18,10 @@ class Game(EnemyMixin):
     # exact values used can be logged with every trained version (see
     # version_utils.env_signature / reward_coeffs).
     REWARD_GOAL_STEP = 0.1    # per-tile progress toward the current goal
-    REWARD_KILL = 0.3         # shooting an enemy (melee, guard or warlock)
+    REWARD_ENEMY_STEP = 0.05  # per-tile change in distance to the nearest enemy
+    REWARD_KILL = 0.3         # shooting an enemy (melee or guard)
     REWARD_KEY = 0.3          # picking up the key
-    REWARD_FREEZE = 0.3       # using the freeze power-up safely (warlock dead)
-    REWARD_ALL_CLEARED = 0.5  # one-time: every enemy defeated, the exit opens
+    REWARD_FREEZE = 0.15      # picking up the freeze power-up
     REWARD_WIN = 1.0          # reaching the exit holding the key (+ speed bonus)
     REWARD_LOSE = -1.0        # killed (HP hits 0), or grabbing the key past the guard
     REWARD_HIT = -0.3         # taking non-lethal damage from an enemy
@@ -36,21 +36,20 @@ class Game(EnemyMixin):
     FREEZE_TICKS = 2
     SHOOT_RANGE = 3           # how many tiles a shot reaches in a straight line
     N_SPIKES = 3
-    # The player faces TOTAL_MELEE_ENEMIES melee enemies over an episode, but only
-    # MAX_ACTIVE_MELEE are ever on the board at once: kill one and another walks in
-    # from the reserve until all TOTAL_MELEE_ENEMIES have been defeated.
-    TOTAL_MELEE_ENEMIES = 6
-    MAX_ACTIVE_MELEE = 3
+    # The player faces exactly this many melee enemies, all on the board at once
+    # (there is no reserve/respawn). Kept as a named constant so
+    # version_utils.env_signature can report the melee count.
+    TOTAL_MELEE_ENEMIES = 2
 
     @classmethod
     def reward_coeffs(cls):
         """Reward coefficients as a plain dict, for logging/versioning."""
         return {
             "goal_step": cls.REWARD_GOAL_STEP,
+            "enemy_step": cls.REWARD_ENEMY_STEP,
             "kill": cls.REWARD_KILL,
             "key": cls.REWARD_KEY,
             "freeze": cls.REWARD_FREEZE,
-            "all_cleared": cls.REWARD_ALL_CLEARED,
             "win": cls.REWARD_WIN,
             "lose": cls.REWARD_LOSE,
             "hit": cls.REWARD_HIT,
@@ -63,8 +62,6 @@ class Game(EnemyMixin):
             "warlock_fireball_range": cls.WARLOCK_FIREBALL_RANGE,
             "n_spikes": cls.N_SPIKES,
             "spike_damage": cls.SPIKE_DAMAGE,
-            "total_melee_enemies": cls.TOTAL_MELEE_ENEMIES,
-            "max_active_melee": cls.MAX_ACTIVE_MELEE
         }
 
     def __init__(self, grid_size=10):
@@ -92,59 +89,52 @@ class Game(EnemyMixin):
                     if random.random() < 0.2:
                         self.grid[r, c] = WALL
 
-            # Directly sample the cells for the player, exit, key, warlock and the
-            # MAX_ACTIVE_MELEE melee enemies on the board at the start, then seat
-            # the guard next to the key and drop the spikes on the remaining
-            # floor. Every later placement avoids the cells already taken, so no
-            # two entities ever share a tile. We need those sampled cells plus one
-            # free cell per spike.
-            n_sampled = 4 + self.MAX_ACTIVE_MELEE  # player, exit, key, warlock + melee
+            # Place the 5 directly-sampled entities (player, exit, key, two melee
+            # enemies) on distinct floor cells, then seat the guard, warlock and
+            # spikes around them. Every later placement avoids the cells already
+            # taken, so no two entities ever share a tile. We need at least the 5
+            # sampled cells plus one free cell per spike.
             cells = floor_cells(self.grid)
-            if len(cells) < n_sampled + self.N_SPIKES:
+            if len(cells) < 5 + self.N_SPIKES:
                 continue
 
-            positions = random.sample(cells, n_sampled)
-            self.player_pos  = list(positions[0])
-            self.exit_pos    = list(positions[1])
-            self.key_pos     = list(positions[2])
-            self.warlock_pos = list(positions[3])
-            self.melee_poses = [list(p) for p in positions[4:]]
-            # The remaining enemies wait off-board and spawn in as the active ones
-            # are killed (see EnemyMixin._respawn_melee).
-            self.melee_reserve = self.TOTAL_MELEE_ENEMIES - self.MAX_ACTIVE_MELEE
+            positions = random.sample(cells, 5)
+            self.player_pos = list(positions[0])
+            self.exit_pos   = list(positions[1])
+            self.freeze_available = True
+            self.key_pos = list(positions[2])
+            self.melee_poses = [list(positions[3]), list(positions[4])]
             occupied = set(positions)
 
-            self.freeze_available = True
-            # The guard is anchored next to the key (the objective it protects),
-            # skipping any neighbour already occupied; it comes back None if every
-            # free side is walled in or taken (handled by the reachability check
-            # below). The warlock used to be anchored to the exit the same way, but
-            # it now hunts the player (see EnemyMixin._move_warlock), so it is just
-            # one of the sampled entities above.
+            # The guard sits next to the key and the warlock next to the exit:
+            # each is anchored to the objective it guards rather than dropped on a
+            # random floor cell, skipping any neighbour that is already occupied.
+            # Either can come back None if every free side is walled in or taken
+            # (handled by the reachability check below).
             self.guard_pos = adjacent_floor_pos(self.grid, self.key_pos, occupied)
             if self.guard_pos is not None:
                 occupied.add(tuple(self.guard_pos))
+            self.warlock_pos = adjacent_floor_pos(self.grid, self.exit_pos, occupied)
+            if self.warlock_pos is not None:
+                occupied.add(tuple(self.warlock_pos))
             self.warlock_fireball_pos = None
             self.warlock_fireball_dir = None
             self.warlock_fireball_ticks = 0
 
-            # Spikes are always-on floor hazards. Keep them off cells walled in on
-            # two or more sides so the player can always route around them, and
-            # (in the validity check below) guarantee a spike-free path to the key
-            # and the exit. Stored as lists (not the sampled tuples) so ==
-            # comparisons with player_pos work: tuple == list is always False.
-            free = [cell for cell in cells
-                    if cell not in occupied and wall_neighbor_count(self.grid, cell) <= 1]
+            # Spikes take any remaining free floor cells. Stored as lists (not the
+            # sampled tuples) so == comparisons with player_pos work: tuple == list
+            # is always False in Python.
+            free = [cell for cell in cells if cell not in occupied]
             if len(free) < self.N_SPIKES:
                 continue
             self.spike_poses = [list(cell) for cell in random.sample(free, self.N_SPIKES)]
-            self.spike_statuses = [True] * self.N_SPIKES
+            self.spike_statuses = [False] * self.N_SPIKES
 
             self.freeze_ticks = 0
             self.has_key = False
+            # Explicit win flag. The old engine had none, but evaluate.py needs it
+            # to classify episodes (see classify_episode), so it is kept.
             self.won = False
-            # Tracks whether the one-time "all enemies cleared" bonus has been paid.
-            self.enemies_cleared_awarded = False
             self.hp = self.MAX_HP
 
             melee_valid = all(
@@ -155,23 +145,22 @@ class Game(EnemyMixin):
             if not melee_valid:
                 continue
 
-            # guard_pos is tested first so the unidirectional helper never receives
-            # None (adjacent_floor_pos returns None when the key is walled in on
-            # every side, and the check would crash on tuple(None)). The guard
-            # needs the key-aware unidirectional check (killable without stepping
-            # onto the key, which would wake it). The warlock only needs plain
-            # reachability. Finally, the key and exit must each be reachable along
-            # a route that never steps on a spike - the spikes must never wall off
-            # an objective.
-            spikes_set = {tuple(s) for s in self.spike_poses}
+            # guard_pos / warlock_pos are tested first so the reachability
+            # helpers below never receive None: adjacent_floor_pos returns None
+            # when an objective is walled in on every side, and the unidirectional
+            # check would otherwise crash on tuple(None).
+            #
+            # The guard needs the unidirectional, key-aware check (it must be
+            # killable without stepping onto the key, which would wake it). The
+            # warlock needs no such guarantee - the player wins by reaching the
+            # exit, so plain reachability is enough to confirm it can be engaged.
             if (self.guard_pos is not None
+                    and self.warlock_pos is not None
                     and is_reachable(self.grid, self.player_pos, self.exit_pos)
                     and is_reachable(self.grid, self.player_pos, self.key_pos)
                     and is_reachable(self.grid, self.player_pos, self.warlock_pos)
                     and is_reachable_unidirectional_any(
                         self.grid, self.player_pos, self.guard_pos, forbidden=self.key_pos)
-                    and is_reachable_avoiding(self.grid, self.player_pos, self.key_pos, spikes_set)
-                    and is_reachable_avoiding(self.grid, self.key_pos, self.exit_pos, spikes_set)
                     and bfs_distance(self.grid, self.player_pos, self.key_pos) >= 2
                     and bfs_distance(self.grid, self.player_pos, self.exit_pos) >= 4):
                 break
@@ -214,9 +203,14 @@ class Game(EnemyMixin):
                 self.key_pos = None
                 self.has_key = True
 
-        # The win condition (reaching the exit with the key) is no longer checked
-        # here: the exit only opens once every enemy is dead, so it is evaluated in
-        # step() after combat resolves (see the _all_enemies_defeated check).
+        # Check win condition: reaching the exit holding the key.
+        elif self.player_pos == self.exit_pos and self.has_key:
+            speed_bonus = max(0.0, (50 - self.steps) / 50)
+            reward = self.REWARD_WIN + speed_bonus
+            terminated = True
+            self.won = True
+            self.done = True
+
         return reward, terminated
 
     def _check_for_spikes(self):
@@ -256,6 +250,8 @@ class Game(EnemyMixin):
         # Cleared each step; only a shoot action repopulates it (for rendering).
         self.last_shot = None
 
+        # Exactly one spike is active this step (chosen here).
+        self._spikes()
         pos_before = list(self.player_pos)
 
         # Spike check #1: the player is on the spike as it triggers. This covers
@@ -264,20 +260,24 @@ class Game(EnemyMixin):
         spike_reward, terminated = self._check_for_spikes()
         reward += spike_reward
 
+        # Distance to the nearest enemy *before* the player acts, so the
+        # enemy-proximity shaping can actually credit the player's own move.
+        # Only movement actions are shaped this way; shooting is rewarded by
+        # the kill bonus in _shoot instead.
+        old_enemy_dist = self._nearest_enemy_distance() if action < 4 else None
+
         # A lethal spike at the start of the step skips the player's action.
         if not terminated:
             if action == 8:
                 if self.freeze_available:
+                    reward += self.REWARD_FREEZE
                     self._activate_freeze_powerup()
-                    if self.warlock_pos is not None:
-                        # Using freeze while the warlock still lives provokes it:
-                        # the warlock punishes the player and the freeze earns no
-                        # reward. Kill the warlock first and freezing becomes both
-                        # safe and rewarded - that is the behaviour we want.
-                        hit_reward, terminated = self._damage_player(self.WARLOCK_DAMAGE)
-                        reward += hit_reward
-                    else:
-                        reward += self.REWARD_FREEZE
+                # Freezing while the warlock is still alive provokes it: the
+                # warlock damages the player. This is the intended cost of using
+                # freeze before the warlock has been dealt with.
+                if self.warlock_pos is not None:
+                    hit_reward, terminated = self._damage_player(self.WARLOCK_DAMAGE)
+                    reward += hit_reward
             elif action < 4:
                 move_reward, terminated = self._move_agent(action, terminated)
                 reward += move_reward
@@ -293,41 +293,16 @@ class Game(EnemyMixin):
 
         # Enemies (melee + warlock) act after the player, unless frozen. The
         # freeze tick is consumed here so it gates every enemy the same way.
-        # terminated is checked first: if the player has just died, the enemies'
-        # last move is irrelevant.
+        # terminated is checked first: if the player has just reached the exit,
+        # the enemies' last move is irrelevant.
         if not terminated:
             if self.freeze_ticks > 0:
                 self.freeze_ticks -= 1
             else:
                 if any(melee_pos is not None for melee_pos in self.melee_poses):
-                    reward, terminated = self._next_enemy_action(reward, terminated)
+                    reward, terminated = self._next_enemy_action(reward, terminated, old_enemy_dist)
                 if not terminated:
                     reward, terminated = self._warlock_action(reward, terminated)
-            # Fill any slot left empty by a kill with a fresh enemy from the
-            # reserve. Runs regardless of freeze, since the player can still shoot
-            # an enemy on a frozen step.
-            if not terminated:
-                self._respawn_melee()
-            # One-time milestone: the moment the board is finally clear (and the
-            # exit opens), reward it to bridge the gap between the last kill and
-            # the eventual win.
-            if (not terminated and not self.enemies_cleared_awarded
-                    and self._all_enemies_defeated()):
-                reward += self.REWARD_ALL_CLEARED
-                self.enemies_cleared_awarded = True
-
-        # The exit only opens once every enemy is gone. Reaching it with the key
-        # wins only when no enemy remains and the reserve is empty. Checked here,
-        # after combat, so killing the final enemy while already standing on the
-        # exit still counts as a win this step.
-        if (not terminated and self.has_key
-                and self.player_pos == self.exit_pos
-                and self._all_enemies_defeated()):
-            speed_bonus = max(0.0, (50 - self.steps) / 50)
-            reward += self.REWARD_WIN + speed_bonus
-            terminated = True
-            self.won = True
-            self.done = True
 
         self.steps += 1
         if self.steps >= self.step_limit and not terminated:  # step limit
@@ -409,6 +384,12 @@ class Game(EnemyMixin):
                 break
         return {"path": path, "hit": hit, "hit_sprite": hit_sprite}
 
+    def _spikes(self):
+        # randint is inclusive on both ends, so the range is [0, N_SPIKES - 1].
+        spike_n = random.randint(0, self.N_SPIKES - 1)
+        for i in range(self.N_SPIKES):
+            self.spike_statuses[i] = (i == spike_n)
+
     def _get_state(self):
         """Returns a copy of the grid with player and exit marked."""
         # creating grids filled with zeros
@@ -435,9 +416,7 @@ class Game(EnemyMixin):
 
         # setting every object's position to 1 in the respective grid
         player[self.player_pos[0], self.player_pos[1]] = 1.0
-        # The exit reads 1.0 once it is open (every enemy cleared) and 0.5 while it
-        # is still locked, so the agent can see when finishing is actually possible.
-        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0 if self._all_enemies_defeated() else 0.5
+        exit_[self.exit_pos[0], self.exit_pos[1]] = 1.0
         if self.freeze_available:
             freeze = (np.full((self.grid_size, self.grid_size), 1, dtype=np.float32))
         if self.key_pos is not None:
@@ -453,9 +432,12 @@ class Game(EnemyMixin):
         # (see EnemyMixin._fireball_danger_tiles).
         for tile in self._fireball_danger_tiles():
             warlock_fireball[tile[0], tile[1]] = 1.0
-        # Spikes are always-on hazards now, so every spike tile reads 1.0.
-        for spike_pos in self.spike_poses:
-            spikes[spike_pos[0], spike_pos[1]] = 1.0
+        # A spike firing this step reads 1.0; a dormant spike reads 0.5.
+        for i in range(len(self.spike_poses)):
+            if self.spike_statuses[i]:
+                spikes[self.spike_poses[i][0], self.spike_poses[i][1]] = 1.0
+            else:
+                spikes[self.spike_poses[i][0], self.spike_poses[i][1]] = 0.5
 
         goal = tuple(self.key_pos) if not self.has_key else tuple(self.exit_pos)
 
