@@ -1,7 +1,0 @@
-1. how does AI use the distance map, exactly? like I get that we add it as a 5th channel in get_state,
-but given that the distances increase from the goal, how does it treat these values? what does it learn from it,
-exactly
-2. you told me to change speed_bonus. you changed 200 to 50: in the first runs of training, it's likely that
-the model will take more than 20 steps; it will rather likely be reaching the maximum number of steps - 200.
-in that case, the speed bonus will diminish completely to 0. is that dangerous? will the model find a "workaround?"
-explain this part
