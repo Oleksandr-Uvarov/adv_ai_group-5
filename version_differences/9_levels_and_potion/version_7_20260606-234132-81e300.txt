@@ -1,0 +1,36 @@
+What changed from the previous version:
+    (no previous machine-readable version to compare against)
+
+Developer comment: randomize the order of levels during training so that the agent is exposed early to different scenarios. add entropy as a parameter in training so that the agent tries things it has rarely tried doing. make sure the warlock is more aggressive - it tries to always attack the player now and lso steps in closer: 2 tiles instead of 3 so that the agent is forced to fight back or move somewhere else. increase the reward for potion.
+
+version recorded:
+obs_shape: (15, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 0  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=7000000   n_envs=8
+duration: 7h 41m 56s   (started 2026-06-06 23:41:37, ended 2026-06-07 07:23:33)
+git: 5bb58baa7c   recorded: 2026-06-07 07:50:05
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=4 (0.0%)   lost=1613 (16.1%)   truncated=8383 (83.8%)
+    max level reached: L1=8631 (86.3%)   L2=1289 (12.9%)   L3=80 (0.8%)
+    emptied the board: 7021 (70.2%)
+    picked up the key: 4742 (47.4%)
+    truncated board-clear+key (refused exit): 3314 (33.1%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        ent_coef=0.01
+        verbose=1
+        seed=42

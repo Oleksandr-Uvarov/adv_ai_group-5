@@ -1,0 +1,75 @@
+{
+  "version": 2,
+  "recorded_at": "2026-06-05 13:21:46",
+  "timing": {
+    "started_at": "2026-06-05 13:11:30",
+    "ended_at": "2026-06-05 13:12:37",
+    "duration_seconds": 67.051149,
+    "duration": "0h 1m 7s"
+  },
+  "git": {
+    "commit": "2338dc113470f07d7ed4df804c8e2991f386b935",
+    "dirty": true
+  },
+  "libraries": {
+    "stable_baselines3": "2.8.0",
+    "torch": "2.12.0+cu130",
+    "gymnasium": "1.2.3",
+    "numpy": "2.4.6"
+  },
+  "training": {
+    "total_timesteps": 100,
+    "n_envs": 8,
+    "features_dim": 128,
+    "policy": "CnnPolicy",
+    "ppo_params": {
+      "n_steps": 2048,
+      "batch_size": 256,
+      "n_epochs": 10,
+      "learning_rate": 0.0003,
+      "verbose": 1,
+      "seed": 42
+    }
+  },
+  "env": {
+    "obs_shape": [
+      13,
+      10,
+      10
+    ],
+    "grid_size": 10,
+    "n_melee": 3,
+    "n_melee_total": 6,
+    "n_guard": 1,
+    "n_warlock": 1,
+    "action_dim": 9,
+    "reward_coeffs": {
+      "goal_step": 0.1,
+      "kill": 0.3,
+      "key": 0.3,
+      "freeze": 0.3,
+      "all_cleared": 0.5,
+      "win": 1.0,
+      "lose": -1.0,
+      "hit": -0.3,
+      "shoot_range": 3,
+      "freeze_ticks": 2,
+      "hp": 100,
+      "enemy_damage": 50,
+      "guard_damage": 50,
+      "warlock_damage": 50,
+      "warlock_fireball_range": 3,
+      "n_spikes": 3,
+      "spike_damage": 34,
+      "total_melee_enemies": 6,
+      "max_active_melee": 3
+    }
+  },
+  "eval": {
+    "n_episodes": 10000,
+    "n_won": 0,
+    "n_lost": 7354,
+    "n_truncated": 2646
+  },
+  "developer_comment": "add more melee enemies - 3 is the number that can be present at once and 6 is the total number. make sure the warlock chases the player and shoots them from afar rather than defends the exit. spikes are always activated now but don't block the exit."
+}

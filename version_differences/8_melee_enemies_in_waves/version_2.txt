@@ -1,0 +1,31 @@
+What changed from the previous version:
+    (no previous machine-readable version to compare against)
+
+Developer comment: add more melee enemies - 3 is the number that can be present at once and 6 is the total number. make sure the warlock chases the player and shoots them from afar rather than defends the exit. spikes are always activated now but don't block the exit.
+
+version recorded:
+obs_shape: (13, 10, 10)   grid_size: 10
+enemies: 3 melee, 1, warlock 1  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=100   n_envs=8
+duration: 0h 1m 7s   (started 2026-06-05 13:11:30, ended 2026-06-05 13:12:37)
+git: 2338dc1134 (dirty)   recorded: 2026-06-05 13:21:46
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=0 (0.0%)   lost=7354 (73.5%)   truncated=2646 (26.5%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
