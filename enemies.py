@@ -1,15 +1,3 @@
-"""Enemy behaviour for :class:`game_engine.Game`, split out as a mixin.
-
-``EnemyMixin`` carries everything the enemies do - the melee enemies (collision-
-free pathing toward the player and spawning in from the reserve) and the warlock
-(kiting movement plus its fireball). ``Game`` inherits from it, so these methods
-run with full access to the game's state via ``self`` (``self.grid``,
-``self.player_pos``, the entity lists, the tunable constants, ``self._damage_player``,
-etc.). All map queries go through the pure helpers in :mod:`pathfinding`.
-
-Kept here, away from game_engine.py, so the engine file stays focused on the map,
-the player, rewards and the observation."""
-
 import random
 
 from pathfinding import (

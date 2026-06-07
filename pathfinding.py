@@ -1,13 +1,3 @@
-"""Grid utilities: BFS reachability, distances, a single pathfinding step and a
-couple of geometry helpers.
-
-Every function here is pure: it takes the integer ``grid`` (0 = floor, 1 = wall,
-a numpy array) and plain ``(row, col)`` coordinates, and never touches game
-state. Keeping them free of ``Game`` means they can be reused and unit-tested in
-isolation, and that the enemy logic and the engine can share one BFS instead of
-each carrying its own copy. The grid's border is always walls, so neighbour
-indexing never runs off the array."""
-
 import numpy as np
 from collections import deque
 
