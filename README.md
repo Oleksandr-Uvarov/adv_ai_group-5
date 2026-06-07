@@ -49,7 +49,7 @@ stage, `7_spikes`.
 | **Exit** | Opens **only once every enemy on the level is dead** (and the melee reserve is exhausted). Reaching it with the key then wins. |
 | **Freeze** | A single consumable charge per episode (refilled when the episode resets): it freezes all enemies for `FREEZE_TICKS = 2` turns. Using it while a warlock is still alive provokes the warlock (damages the player, no reward); once the board is warlock-free it is safe and rewarded. |
 
-### Constants (single source of truth: `Game` in `game_engine.py`)
+### Constants (single source of truth: `GameConfig` in `config.py`, inherited by `Game`)
 
 | Constant | Value | | Constant | Value |
 |----------|-------|-|----------|-------|
@@ -100,8 +100,8 @@ that direction within `SHOOT_RANGE`. Freeze with the charge already spent is a n
 
 ### Reward structure
 
-All coefficients live in `Game` and are logged with every trained version via
-`Game.reward_coeffs()`.
+All coefficients live in `GameConfig` (`config.py`, inherited by `Game`) and are
+logged with every trained version via `Game.reward_coeffs()`.
 
 | Event | Reward | Notes |
 |-------|--------|-------|
@@ -132,8 +132,9 @@ eventual win.
 
 ### Map generation and validity guarantees
 
-Each episode regenerates the map: border walls, then each interior cell is a wall
-with 20% probability. Entities are sampled onto distinct floor cells (player,
+Each episode regenerates the map (`LevelMixin.reset` in `level.py`): border
+walls, then each interior cell is a wall with 20% probability. Entities are
+sampled onto distinct floor cells (player,
 exit, key, warlock, the active melee enemies), the guard is seated next to the
 key, and spikes are dropped only on cells walled in on ≤1 side. A map is
 re-rolled until all of the following hold:
@@ -292,9 +293,18 @@ learning around on/off spikes that led to making spikes always-on).
 
 ## Project structure
 
+`Game` (`game_engine.py`) is assembled from focused mixins so each file stays
+about one thing. `class Game(GameConfig, LevelMixin, CombatMixin,
+ObservationMixin, EnemyMixin)` — every mixin reaches the shared game state
+through `self`, and all grid maths lives in the pure `pathfinding.py`.
+
 ```
 .
-├── game_engine.py      # Game: map, player, rewards, observation. Core logic.
+├── game_engine.py      # Game: composes the mixins; the per-step loop + player movement/spikes/damage.
+├── config.py           # GameConfig: tunable constants + reward_coeffs (single source of truth).
+├── level.py            # LevelMixin: reset() — map + entity generation and validity checks.
+├── combat.py           # CombatMixin: the player's hitscan shooting (+ shot path for rendering).
+├── observation.py      # ObservationMixin: builds the agent's (13, 10, 10) observation tensor.
 ├── enemies.py          # EnemyMixin: melee/guard/warlock movement, fireball, respawns.
 ├── pathfinding.py      # Pure grid helpers: BFS reachability, distance maps, stepping.
 ├── env.py              # Gymnasium wrapper around Game (used by PPO).
