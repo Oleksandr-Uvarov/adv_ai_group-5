@@ -1,7 +1,10 @@
-What changed from the previous version:
-    (no previous machine-readable version to compare against)
+What changed from the previous version / Developer comment:
 
-Developer comment: randomize the order of levels during training so that the agent is exposed early to different scenarios. add entropy as a parameter in training so that the agent tries things it has rarely tried doing. make sure the warlock is more aggressive - it tries to always attack the player now and lso steps in closer: 2 tiles instead of 3 so that the agent is forced to fight back or move somewhere else. increase the reward for potion.
+randomize the order of levels during training so that the agent is exposed early to different scenarios.
+ add entropy as a parameter in training so that the agent tries things it has rarely tried doing.
+  make sure the warlock is more aggressive - it tries to always attack the player now
+   and lso steps in closer: 2 tiles instead of 3 so that the agent is forced to fight back
+    or move somewhere else. increase the reward for potion.
 
 version recorded:
 obs_shape: (15, 10, 10)   grid_size: 10
