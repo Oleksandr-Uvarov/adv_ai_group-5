@@ -494,4 +494,4 @@ if __name__ == "__main__":
         model_path = sys.argv[2] if len(sys.argv) > 2 else V4_ZIP
         diagnose(model_path, n_episodes=2000)
     else:
-        main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_6_20260606-164746-dc9bb4.zip", n_episodes=10000)
+        main("version_history/9_levels_and_potion/zips/9_levels_and_potion_ppo_7_20260606-234132-81e300.zip", n_episodes=30)
