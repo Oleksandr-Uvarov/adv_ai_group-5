@@ -1,0 +1,31 @@
+What changed from the previous version:
+    (no previous machine-readable version to compare against)
+
+Developer comment: first version with a dragon.
+
+version recorded:
+obs_shape: (17, 10, 10)   grid_size: 10
+enemies: 2 melee, 1, warlock 1  action_dim: 9
+reward coeffs: goal 0.1, kill 0.3, freeze 0.3, all_cleared 0.5
+
+training: total_timesteps=15000000   n_envs=8
+duration: 11h 6m 55s   (started 2026-06-06 01:08:33, ended 2026-06-06 12:15:28)
+git: 9202c80191 (dirty)   recorded: 2026-06-06 12:28:50
+libraries: stable_baselines3 2.8.0  torch 2.12.0+cu130  gymnasium 1.2.3  numpy 2.4.6
+
+Evaluation:
+    episodes=10000   won=0 (0.0%)   lost=4835 (48.4%)   truncated=5165 (51.6%)
+
+Parameters:
+
+    features_dim (policy_kwargs): 128
+
+    PPO:
+
+        CnnPolicy
+        n_steps=2048
+        batch_size=256
+        n_epochs=10
+        learning_rate=0.0003
+        verbose=1
+        seed=42
